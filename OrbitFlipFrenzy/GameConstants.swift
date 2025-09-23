@@ -11,6 +11,10 @@ public struct GameConstants {
     public static let doubleFlipHoldThreshold: TimeInterval = 0.35
     public static let doubleFlipReleaseWindow: TimeInterval = 0.2
     public static let tapCooldown: TimeInterval = 0.15
+    public static let obstacleSize = CGSize(width: 36, height: 42)
+    public static let obstaclePoolWarmupCount: Int = 12
+    public static let obstaclePoolMaxStored: Int = 24
+    public static let obstacleLifetime: TimeInterval = 6.0
     public static let nearMissDistance: CGFloat = 12.0
     public static let nearMissMultiplierGain: CGFloat = 0.2
     public static let multiplierDecayFactor: CGFloat = 0.5
@@ -29,6 +33,8 @@ public struct GameConstants {
     public static let replayDuration: TimeInterval = 3.0
     public static let particleBirthRate: CGFloat = 100.0
     public static let particleLifetime: CGFloat = 0.5
+    public static let particlePoolWarmupCount: Int = 6
+    public static let particlePoolMaxStored: Int = 12
     public static let milestoneScores: [Int] = [10, 25, 50, 100]
     public static let milestoneStep: Int = 100
     public static let inversionDuration: TimeInterval = 5.0

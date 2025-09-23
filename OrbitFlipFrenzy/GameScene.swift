@@ -194,21 +194,39 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         private var available: [SKShapeNode] = []
         private var active: Set<SKShapeNode> = []
         private let assetGenerator: AssetGenerating
+        private let obstacleSize: CGSize
+        private let maxStored: Int
 
-        init(assetGenerator: AssetGenerating) {
+        init(assetGenerator: AssetGenerating,
+             obstacleSize: CGSize,
+             maxStored: Int) {
             self.assetGenerator = assetGenerator
+            self.obstacleSize = obstacleSize
+            self.maxStored = maxStored
+        }
+
+        func prewarm(count: Int) {
+            guard count > available.count else { return }
+            let target = min(count, maxStored)
+            if available.count >= target { return }
+            for _ in available.count..<target {
+                let node = assetGenerator.makeObstacleNode(size: obstacleSize)
+                node.isHidden = true
+                available.append(node)
+            }
         }
 
         func spawn() -> SKShapeNode {
-            let node: SKShapeNode
-            if let reused = available.popLast() {
-                node = reused
-            } else {
-                node = assetGenerator.makeObstacleNode(size: CGSize(width: 36, height: 42))
-            }
+            let node = available.popLast() ?? assetGenerator.makeObstacleNode(size: obstacleSize)
+            node.removeAllActions()
             node.alpha = 1.0
             node.isHidden = false
-            node.userData = NSMutableDictionary()
+            node.setScale(1.0)
+            if let data = node.userData {
+                data.removeAllObjects()
+            } else {
+                node.userData = NSMutableDictionary()
+            }
             active.insert(node)
             return node
         }
@@ -217,13 +235,61 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             node.removeAllActions()
             node.removeAllChildren()
             node.removeFromParent()
+            node.alpha = 1.0
+            node.isHidden = true
             node.userData?.removeAllObjects()
             active.remove(node)
-            available.append(node)
+            if available.count < maxStored {
+                available.append(node)
+            }
+        }
+
+        func recycleAllActive() {
+            let nodes = Array(active)
+            nodes.forEach { recycle($0) }
         }
 
         func allActive() -> [SKShapeNode] {
             Array(active)
+        }
+    }
+
+    private final class ParticlePool {
+        private var available: [SKEmitterNode] = []
+        private let maxStored: Int
+        private let factory: () -> SKEmitterNode
+
+        init(maxStored: Int, factory: @escaping () -> SKEmitterNode) {
+            self.maxStored = maxStored
+            self.factory = factory
+        }
+
+        func prewarm(count: Int) {
+            guard count > available.count else { return }
+            let target = min(count, maxStored)
+            if available.count >= target { return }
+            for _ in available.count..<target {
+                available.append(factory())
+            }
+        }
+
+        func obtain() -> SKEmitterNode {
+            let emitter = available.popLast() ?? factory()
+            emitter.removeAllActions()
+            emitter.alpha = 1.0
+            emitter.isHidden = false
+            emitter.resetSimulation()
+            return emitter
+        }
+
+        func recycle(_ emitter: SKEmitterNode) {
+            emitter.removeAllActions()
+            emitter.removeFromParent()
+            emitter.targetNode = nil
+            emitter.alpha = 1.0
+            if available.count < maxStored {
+                available.append(emitter)
+            }
         }
     }
 
@@ -237,6 +303,11 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         private var accumulator: TimeInterval = 0
 
         public init() {}
+
+        public func reset() {
+            frames.removeAll()
+            accumulator = 0
+        }
 
         public func update(deltaTime: TimeInterval, scene: SKScene) {
             accumulator += deltaTime
@@ -367,6 +438,15 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private lazy var nearMissTexture: SKTexture? = assets.makeParticleTexture(radius: 6, color: GamePalette.solarGold)
     private lazy var scoreBurstTexture: SKTexture? = assets.makeParticleTexture(radius: 4, color: GamePalette.neonMagenta)
     private lazy var meteorParticleTexture: SKTexture? = assets.makeParticleTexture(radius: 3, color: .white)
+
+    private lazy var nearMissEmitterPool = ParticlePool(maxStored: GameConstants.particlePoolMaxStored) { [weak self] in
+        guard let self else { return SKEmitterNode() }
+        return self.makeNearMissEmitter()
+    }
+    private lazy var scoreEmitterPool = ParticlePool(maxStored: GameConstants.particlePoolMaxStored) { [weak self] in
+        guard let self else { return SKEmitterNode() }
+        return self.makeScoreEmitter()
+    }
     private lazy var gemParticleTexture: SKTexture? = assets.makeParticleTexture(radius: 5, color: GamePalette.solarGold)
     private lazy var shieldBurstTexture: SKTexture? = assets.makeParticleTexture(radius: 5, color: GamePalette.cyan)
     private lazy var shieldBreakTexture: SKTexture? = assets.makeParticleTexture(radius: 5, color: GamePalette.cyan)
@@ -392,6 +472,10 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         self.sound = sound
         self.haptics = haptics
         self.powerups = powerups
+        self.obstaclePool = ObstaclePool(assetGenerator: assets,
+                                         obstacleSize: GameConstants.obstacleSize,
+                                         maxStored: GameConstants.obstaclePoolMaxStored)
+
         self.adManager = adManager
         self.obstaclePool = ObstaclePool(assetGenerator: assets)
         super.init(size: size)
@@ -410,9 +494,20 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
         backgroundColor = GamePalette.deepNavy
 
+        replayRecorder.reset()
+        clearPowerUps()
         let background = assets.makeBackground(size: view.bounds.size)
         addChild(background)
         backgroundNode = background
+
+        obstaclePool.recycleAllActive()
+        obstaclePool.prewarm(count: GameConstants.obstaclePoolWarmupCount)
+        if nearMissTexture != nil {
+            nearMissEmitterPool.prewarm(count: GameConstants.particlePoolWarmupCount)
+        }
+        if scoreBurstTexture != nil {
+            scoreEmitterPool.prewarm(count: GameConstants.particlePoolWarmupCount)
+        }
 
         configureRings()
         configurePlayer()
@@ -1008,6 +1103,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
 
+    private func makeNearMissEmitter() -> SKEmitterNode {
+
+
     private func playerWorldPosition() -> CGPoint {
         playerNode.position
     private func updateGemBalanceDisplay() {
@@ -1055,8 +1153,11 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func emitNearMiss(at position: CGPoint) {
         guard let texture = nearMissTexture else { return }
+
         let emitter = SKEmitterNode()
-        emitter.particleTexture = texture
+        if let texture = nearMissTexture {
+            emitter.particleTexture = texture
+        }
         emitter.numParticlesToEmit = 28
         emitter.particleLifetime = 0.6
         emitter.particleBirthRate = 200
@@ -1068,13 +1169,46 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         emitter.particleScaleSpeed = -0.2
         emitter.particleColorBlendFactor = 1
         emitter.particleColor = GamePalette.solarGold
+        return emitter
+    }
+
+    private func makeScoreEmitter() -> SKEmitterNode {
+        let emitter = SKEmitterNode()
+        if let texture = scoreBurstTexture {
+            emitter.particleTexture = texture
+        }
+        emitter.numParticlesToEmit = 18
+        emitter.particleLifetime = 0.4
+        emitter.particleBirthRate = 150
+        emitter.particleAlpha = 0.8
+        emitter.particleAlphaSpeed = -1.5
+        emitter.particleSpeed = 90
+        emitter.particleScale = 0.3
+        emitter.particleScaleSpeed = -0.2
+        emitter.particleColorBlendFactor = 1
+        emitter.particleColor = GamePalette.neonMagenta
+        return emitter
+    }
+
+    private func emitNearMiss(at position: CGPoint) {
+        guard nearMissTexture != nil else { return }
+        let emitter = nearMissEmitterPool.obtain()
         emitter.position = position
         emitter.zPosition = 80
+        emitter.targetNode = self
+        emitter.alpha = 1.0
+        emitter.resetSimulation()
         addChild(emitter)
-        emitter.run(SKAction.sequence([
+        let cleanup = SKAction.sequence([
             SKAction.wait(forDuration: 0.7),
-            SKAction.removeFromParent()
-        ]))
+            SKAction.fadeOut(withDuration: 0.2),
+            SKAction.run { [weak self, weak emitter] in
+                guard let emitter = emitter else { return }
+                emitter.alpha = 1.0
+                self?.nearMissEmitterPool.recycle(emitter)
+            }
+        ])
+        emitter.run(cleanup, withKey: "nearMissCleanup")
     }
 
     private func showShieldBreak(at position: CGPoint) {
@@ -1119,26 +1253,24 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             SKAction.removeFromParent()
         ]))
 
-        if let texture = scoreBurstTexture {
-            let emitter = SKEmitterNode()
-            emitter.particleTexture = texture
-            emitter.numParticlesToEmit = 18
-            emitter.particleLifetime = 0.4
-            emitter.particleBirthRate = 150
-            emitter.particleAlpha = 0.8
-            emitter.particleAlphaSpeed = -1.5
-            emitter.particleSpeed = 90
-            emitter.particleScale = 0.3
-            emitter.particleScaleSpeed = -0.2
-            emitter.particleColorBlendFactor = 1
-            emitter.particleColor = GamePalette.neonMagenta
+        if scoreBurstTexture != nil {
+            let emitter = scoreEmitterPool.obtain()
             emitter.position = position
             emitter.zPosition = 75
+            emitter.targetNode = self
+            emitter.alpha = 1.0
+            emitter.resetSimulation()
             addChild(emitter)
-            emitter.run(SKAction.sequence([
+            let cleanup = SKAction.sequence([
                 SKAction.wait(forDuration: 0.5),
-                SKAction.removeFromParent()
-            ]))
+                SKAction.fadeOut(withDuration: 0.2),
+                SKAction.run { [weak self, weak emitter] in
+                    guard let emitter = emitter else { return }
+                    emitter.alpha = 1.0
+                    self?.scoreEmitterPool.recycle(emitter)
+                }
+            ])
+            emitter.run(cleanup, withKey: "scoreEmitterCleanup")
         }
     }
 
@@ -1632,7 +1764,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func updateObstacles(currentTime: TimeInterval) {
         for obstacle in obstaclePool.allActive() {
             guard let spawnTime = obstacle.userData?["spawn"] as? TimeInterval else { continue }
-            if currentTime - spawnTime > 6.0 {
+            if currentTime - spawnTime > GameConstants.obstacleLifetime {
                 obstacleCleared(obstacle)
                 continue
             }
@@ -1663,6 +1795,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             sound.play(.nearMiss)
             updateHUD()
             emitNearMiss(at: playerPosition)
+            shake(intensity: 2.0)
         }
     }
 
@@ -1670,6 +1803,13 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         powerups.update(currentTime: currentTime)
         let playerPosition = playerWorldPosition()
         for (index, node) in powerUpNodes.enumerated().reversed() {
+            guard let parent = node.parent else {
+                powerUpNodes.remove(at: index)
+                continue
+            }
+            let playerPosition = playerNode.parent?.convert(playerNode.position, to: self) ?? .zero
+            let nodePosition = parent.convert(node.position, to: self)
+
             let nodePosition = node.parent?.convert(node.position, to: self) ?? .zero
             let distance = hypot(playerPosition.x - nodePosition.x, playerPosition.y - nodePosition.y)
             if distance < 36 {
@@ -1681,7 +1821,28 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
+    private func clearPowerUps() {
+        for node in powerUpNodes {
+            node.removeAllActions()
+            node.removeFromParent()
+        }
+        powerUpNodes.removeAll(keepingCapacity: false)
+    }
+
+    private func removeTrackedPowerUp(_ node: SKShapeNode) {
+        if let index = powerUpNodes.firstIndex(where: { $0 === node }) {
+            powerUpNodes.remove(at: index)
+        }
+    }
+
     private func applyPowerUp(_ node: SKShapeNode) {
+        removeTrackedPowerUp(node)
+        guard let type = determinePowerUpType(from: node) else {
+            node.removeAllActions()
+            node.removeFromParent()
+            return
+        }
+        node.removeAllActions()
         guard let type = determinePowerUpType(from: node) else { return }
         powerUpNodes.removeAll { $0 === node }
         node.removeFromParent()
@@ -2020,7 +2181,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         spawnTimer = 0
         lastUpdate = currentTimeSnapshot
         specialEventsTriggered.removeAll()
-        obstaclePool.allActive().forEach { obstaclePool.recycle($0) }
+        obstaclePool.recycleAllActive()
         lastTapTime = currentTimeSnapshot
     }
 }
