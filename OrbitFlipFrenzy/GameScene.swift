@@ -77,6 +77,16 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             currentMultiplier * streakMultiplier
         }
 
+        func currentGems() -> Int { data.gems }
+
+        var shieldPurchaseCost: Int { GameConstants.shieldPowerupGemCost }
+
+        func attemptShieldPurchase() -> Bool {
+            guard data.spendGems(shieldPurchaseCost) else { return false }
+            analytics.track(.gemsSpent(amount: shieldPurchaseCost, reason: "shield_powerup"))
+            return true
+        }
+
         func reset() {
             score = 0
             currentMultiplier = 1.0
@@ -259,6 +269,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var eventBanner: SKLabelNode?
     private var shieldAura: SKShapeNode?
     private var inversionOverlay: SKSpriteNode?
+    private var gemLabel: SKLabelNode?
+    private var shieldPurchaseButton: SKSpriteNode?
+    private var lastKnownGemBalance: Int = 0
 
     private var lastUpdate: TimeInterval = 0
     private var spawnTimer: TimeInterval = 0
@@ -409,8 +422,11 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         multiplierLabel?.removeFromParent()
         levelLabel?.removeFromParent()
         powerupLabel?.removeFromParent()
+        streakLabel?.removeFromParent()
         streakBadge?.removeFromParent()
         eventBanner?.removeFromParent()
+        gemLabel?.removeFromParent()
+        shieldPurchaseButton?.removeFromParent()
 
         let score = SKLabelNode(fontNamed: "Orbitron-Bold")
         score.fontSize = 28
@@ -452,6 +468,23 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         addChild(power)
         powerupLabel = power
 
+        let gems = SKLabelNode(fontNamed: "Orbitron-Bold")
+        gems.fontSize = 18
+        gems.fontColor = GamePalette.cyan
+        gems.horizontalAlignmentMode = .right
+        gems.zPosition = 50
+        gems.text = "Gems: \(viewModel.currentGems())"
+        addChild(gems)
+        gemLabel = gems
+        lastKnownGemBalance = viewModel.currentGems()
+
+        let shieldButton = assets.makeButtonNode(text: "Shield (\(viewModel.shieldPurchaseCost) gems)", size: CGSize(width: 240, height: 58))
+        shieldButton.name = "shield_store"
+        shieldButton.zPosition = 50
+        addChild(shieldButton)
+        shieldPurchaseButton = shieldButton
+        updateShieldStoreState()
+
         let badge = SKShapeNode(rectOf: CGSize(width: 200, height: 40), cornerRadius: 20)
         badge.fillColor = GamePalette.solarGold.withAlphaComponent(0.15)
         badge.strokeColor = GamePalette.solarGold
@@ -489,10 +522,12 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         levelLabel?.position = CGPoint(x: -size.width * 0.35, y: topY)
         scoreLabel?.position = CGPoint(x: 0, y: topY)
         multiplierLabel?.position = CGPoint(x: 0, y: topY - 36)
+        gemLabel?.position = CGPoint(x: size.width * 0.45, y: topY)
         if let badge = streakBadge {
             badge.position = CGPoint(x: size.width * 0.35, y: topY)
         }
         powerupLabel?.position = CGPoint(x: 0, y: -size.height * 0.45)
+        shieldPurchaseButton?.position = CGPoint(x: size.width * 0.35, y: -size.height * 0.4)
         eventBanner?.position = CGPoint(x: 0, y: size.height * 0.28)
         inversionOverlay?.position = .zero
         inversionOverlay?.size = size
@@ -539,6 +574,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             powerupLabel?.text = "Power-ups: " + names.joined(separator: ", ")
             powerupLabel?.fontColor = GamePalette.cyan
         }
+        updateShieldStoreState()
     }
 
     private func updateShieldAura() {
@@ -568,6 +604,48 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             ]))
             shieldAura = nil
         }
+    }
+
+    private func updateGemBalanceDisplay() {
+        let balance = viewModel.currentGems()
+        if balance != lastKnownGemBalance {
+            lastKnownGemBalance = balance
+            gemLabel?.text = "Gems: \(balance)"
+        }
+    }
+
+    private func updateShieldStoreState() {
+        guard let button = shieldPurchaseButton else { return }
+        let canAfford = viewModel.currentGems() >= viewModel.shieldPurchaseCost
+        let shieldActive = powerups.isActive(.shield, currentTime: currentTimeSnapshot)
+        let enabled = !isGameOver && canAfford && !shieldActive
+        button.alpha = enabled ? 1.0 : 0.4
+        if let label = button.childNode(withName: "label") as? SKLabelNode {
+            label.text = "Shield (\(viewModel.shieldPurchaseCost) gems)"
+        }
+    }
+
+    private func attemptShieldPurchase() {
+        guard !isGameOver else { return }
+        if powerups.isActive(.shield, currentTime: currentTimeSnapshot) {
+            showEventBanner("Shield already active")
+            return
+        }
+        if viewModel.attemptShieldPurchase() {
+            updateGemBalanceDisplay()
+            powerups.activate(.shield(duration: GameConstants.shieldPowerupDuration), currentTime: currentTimeSnapshot)
+            updateShieldAura()
+            updatePowerupHUDIfNeeded()
+            showEventBanner("Shield activated!")
+        } else {
+            showEventBanner("Not enough gems for shield")
+        }
+        updateShieldStoreState()
+    }
+
+    private func nodesContainShieldButton(_ nodes: [SKNode]) -> Bool {
+        guard let button = shieldPurchaseButton else { return false }
+        return nodes.contains(where: { $0 == button || ($0.name == "label" && $0.parent == button) })
     }
 
     private func emitNearMiss(at position: CGPoint) {
@@ -660,6 +738,12 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Touch Handling
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let location = touches.first?.location(in: self) else { return }
+        let touchedNodes = nodes(at: location)
+        if nodesContainShieldButton(touchedNodes) {
+            shieldPurchaseButton?.setPressed(true)
+            return
+        }
         guard !isGameOver else { return }
         touchBeganTime = currentTimeSnapshot
         doubleFlipArmed = false
@@ -674,6 +758,13 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let location = touches.first?.location(in: self) else { return }
+        shieldPurchaseButton?.setPressed(false)
+        let touchedNodes = nodes(at: location)
+        if nodesContainShieldButton(touchedNodes) {
+            attemptShieldPurchase()
+            return
+        }
         guard !isGameOver else { return }
         defer { touchBeganTime = nil }
         let now = currentTimeSnapshot
@@ -685,6 +776,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        shieldPurchaseButton?.setPressed(false)
         guard !isGameOver else { return }
         touchBeganTime = nil
         doubleFlipArmed = false
@@ -757,6 +849,8 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         updatePowerupHUDIfNeeded()
         refreshStreakIfNeeded()
         handleSpecialEvents()
+        updateGemBalanceDisplay()
+        updateShieldStoreState()
     }
 
     private func updateRings(delta: TimeInterval) {
@@ -1077,6 +1171,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func endGame() {
         guard !isGameOver else { return }
         isGameOver = true
+        updateShieldStoreState()
         viewModel.registerCollision()
         viewModel.finalizeScore()
         shieldAura?.removeAllActions()

@@ -58,6 +58,10 @@ extension GameViewController: MenuSceneDelegate {
     func menuScene(_ scene: MenuScene, didSelectProduct name: String) {
         container.presentPurchasePrompt(for: name, from: self)
     }
+
+    func menuSceneDidRequestRestore(_ scene: MenuScene) {
+        container.restorePurchases(from: self)
+    }
 }
 
 extension GameViewController: GameSceneDelegate {
@@ -91,15 +95,36 @@ extension GameViewController: GameOverSceneDelegate {
 }
 
 private final class DependencyContainer {
-    let assets = AssetGenerator()
-    let sound = SoundEngine()
-    let haptics = HapticManager()
-    let analytics = Analytics()
-    let adManager = AdManager()
-    let data = GameData.shared
+    let assets: AssetGenerator
+    let sound: SoundEngine
+    let haptics: HapticManager
+    let analytics: Analytics
+    let adManager: AdManager
+    let data: GameData
+    let purchases: PurchaseManager
+    let remoteConfig: RemoteConfigManager
+
+    init() {
+        self.assets = AssetGenerator()
+        self.sound = SoundEngine()
+        self.haptics = HapticManager()
+        self.remoteConfig = RemoteConfigManager()
+        self.analytics = Analytics(remoteConfig: remoteConfig)
+        self.data = GameData.shared
+        self.data.configure(remoteConfig: remoteConfig)
+        self.adManager = AdManager()
+        self.purchases = PurchaseManager(data: data, analytics: analytics, remoteConfig: remoteConfig)
+        self.adManager.preload()
+        self.remoteConfig.refresh()
+    }
 
     func makeMenuScene(size: CGSize) -> MenuScene {
-        let viewModel = MenuScene.ViewModel(assets: assets, data: data, sound: sound)
+        let viewModel = MenuScene.ViewModel(assets: assets,
+                                            data: data,
+                                            sound: sound,
+                                            purchases: purchases,
+                                            analytics: analytics,
+                                            remoteConfig: remoteConfig)
         let scene = MenuScene(size: size, viewModel: viewModel, assets: assets)
         return scene
     }
@@ -124,30 +149,26 @@ private final class DependencyContainer {
                                                 adManager: adManager,
                                                 sound: sound,
                                                 haptics: haptics,
-                                                analytics: analytics)
+                                                analytics: analytics,
+                                                data: data)
         let scene = GameOverScene(size: size, viewModel: viewModel, assets: assets, result: result)
         return scene
     }
 
     func presentPurchasePrompt(for product: String, from controller: UIViewController) {
-        let message: String
-        switch product {
-        case "Starter Pack":
-            message = "Starter Pack unlocks Nova Pod skin + 200 gems for just $0.99!"
-        case "Remove Ads":
-            message = "Remove all ads and keep rewarded options for $2.99."
-        case "100 Gems":
-            message = "Grab 100 gems instantly for $0.99."
-        case "550 Gems":
-            message = "550 gems + bonus to customize your pod."
-        case "1200 Gems":
-            message = "1200 gems + massive bonus trails."
-        default:
-            message = product
+        guard let id = PurchaseManager.ProductID(displayName: product) else {
+            let alert = UIAlertController(title: product,
+                                          message: "Product not available in StoreKit catalog.",
+                                          preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            controller.present(alert, animated: true)
+            return
         }
-        let alert = UIAlertController(title: product, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        controller.present(alert, animated: true)
+        purchases.presentStorefront(for: id, from: controller)
+    }
+
+    func restorePurchases(from controller: UIViewController) {
+        purchases.presentRestorePurchases(from: controller)
     }
 }
 

@@ -31,27 +31,40 @@ public final class GameOverScene: SKScene {
         private let sound: SoundPlaying
         private let haptics: HapticProviding
         private let analytics: AnalyticsTracking
+        private let data: GameData
 
         init(assets: AssetGenerating,
              adManager: AdManaging,
              sound: SoundPlaying,
              haptics: HapticProviding,
-             analytics: AnalyticsTracking) {
+             analytics: AnalyticsTracking,
+             data: GameData) {
             self.assets = assets
             self.adManager = adManager
             self.sound = sound
             self.haptics = haptics
             self.analytics = analytics
+            self.data = data
         }
 
         func makeButton(title: String, size: CGSize) -> SKSpriteNode {
             assets.makeButtonNode(text: title, size: size)
         }
 
-        func showRewarded(from controller: UIViewController, completion: @escaping () -> Void) {
-            adManager.showRewardedAd(from: controller) { [weak self] in
-                self?.analytics.track(.adWatched(placement: "continue"))
-                completion()
+        func preloadRewarded() {
+            adManager.preload()
+        }
+
+        func showRewarded(from controller: UIViewController, completion: @escaping (Result<Void, AdManager.AdError>) -> Void) {
+            adManager.showRewardedAd(from: controller) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success:
+                    self.analytics.track(.adWatched(placement: "continue"))
+                case let .failure(error):
+                    self.analytics.track(.monetizationError(message: "Rewarded failed: \(error.description)"))
+                }
+                completion(result)
             }
         }
 
@@ -73,6 +86,21 @@ public final class GameOverScene: SKScene {
         }
 
         var rewardedReady: Bool { adManager.isRewardedReady }
+
+        var gemReviveCost: Int { GameConstants.reviveGemCost }
+
+        func canAffordGemRevive() -> Bool {
+            data.canAfford(gemReviveCost)
+        }
+
+        @discardableResult
+        func spendGemsForRevive() -> Bool {
+            guard data.spendGems(gemReviveCost) else { return false }
+            analytics.track(.gemsSpent(amount: gemReviveCost, reason: "revive"))
+            return true
+        }
+
+        func currentGemBalance() -> Int { data.gems }
     }
 
     public weak var overDelegate: GameOverSceneDelegate?
@@ -84,6 +112,13 @@ public final class GameOverScene: SKScene {
     private var retryButton: SKSpriteNode?
     private var continueButton: SKSpriteNode?
     private var homeButton: SKSpriteNode?
+    private var gemContinueButton: SKSpriteNode?
+    private var gemBalanceLabel: SKLabelNode?
+    private var monetizationStatusLabel: SKLabelNode?
+    private var lastGemBalance: Int = 0
+    private var statusMessageRemaining: TimeInterval = 0
+    private var lastRewardedReady: Bool = false
+    private var lastUpdateTime: TimeInterval = 0
 
     public init(size: CGSize, viewModel: ViewModel, assets: AssetGenerating, result: GameResult) {
         self.viewModel = viewModel
@@ -102,6 +137,7 @@ public final class GameOverScene: SKScene {
         backgroundColor = GamePalette.deepNavy
         addChild(assets.makeBackground(size: view.bounds.size))
         viewModel.playCollisionFeedback()
+        viewModel.preloadRewarded()
 
         let title = SKLabelNode(text: "Don't lose your streak!")
         title.fontName = "Orbitron-Bold"
@@ -109,6 +145,16 @@ public final class GameOverScene: SKScene {
         title.fontColor = GamePalette.solarGold
         title.position = CGPoint(x: 0, y: view.bounds.height * 0.2)
         addChild(title)
+
+        let gemLabel = SKLabelNode(fontNamed: "Orbitron-Bold")
+        gemLabel.fontSize = 18
+        gemLabel.fontColor = GamePalette.cyan
+        gemLabel.horizontalAlignmentMode = .right
+        gemLabel.position = CGPoint(x: view.bounds.width * 0.35, y: title.position.y)
+        gemLabel.text = "Gems: \(viewModel.currentGemBalance())"
+        addChild(gemLabel)
+        gemBalanceLabel = gemLabel
+        lastGemBalance = viewModel.currentGemBalance()
 
         let scoreNode = SKLabelNode(text: "Score \(result.score)")
         scoreNode.fontName = "Orbitron-Bold"
@@ -143,10 +189,14 @@ public final class GameOverScene: SKScene {
         continueButton?.position = CGPoint(x: 0, y: shareButton?.position.y ?? -20 - 80)
         continueButton?.name = "continue"
         if let continueButton { addChild(continueButton) }
-        continueButton?.alpha = viewModel.rewardedReady ? 1.0 : 0.4
+
+        gemContinueButton = viewModel.makeButton(title: "Spend \(viewModel.gemReviveCost) Gems", size: CGSize(width: 260, height: 60))
+        gemContinueButton?.position = CGPoint(x: 0, y: (continueButton?.position.y ?? -100) - 80)
+        gemContinueButton?.name = "gem_continue"
+        if let gemContinueButton { addChild(gemContinueButton) }
 
         retryButton = viewModel.makeButton(title: "Retry", size: CGSize(width: 180, height: 60))
-        retryButton?.position = CGPoint(x: 0, y: (continueButton?.position.y ?? -100) - 80)
+        retryButton?.position = CGPoint(x: 0, y: (gemContinueButton?.position.y ?? -160) - 80)
         retryButton?.name = "retry"
         if let retryButton { addChild(retryButton) }
 
@@ -162,6 +212,18 @@ public final class GameOverScene: SKScene {
         challengeLabel.fontSize = 12
         challengeLabel.position = CGPoint(x: 0, y: (homeButton?.position.y ?? -240) - 50)
         addChild(challengeLabel)
+
+        let status = SKLabelNode(fontNamed: "SFProRounded-Bold")
+        status.fontSize = 16
+        status.fontColor = UIColor.white.withAlphaComponent(0.85)
+        status.alpha = 0
+        status.position = CGPoint(x: 0, y: challengeLabel.position.y - 40)
+        addChild(status)
+        monetizationStatusLabel = status
+
+        lastRewardedReady = viewModel.rewardedReady
+        updateRewardedAvailability()
+        updateGemButtonState()
     }
 
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -169,6 +231,8 @@ public final class GameOverScene: SKScene {
         let nodes = nodes(at: location)
         if let share = shareButton, nodes.contains(share) || nodes.contains(where: { $0.name == "label" && $0.parent == share }) {
             handleShare()
+        } else if let gem = gemContinueButton, nodes.contains(gem) || nodes.contains(where: { $0.name == "label" && $0.parent == gem }) {
+            handleGemContinue()
         } else if let retry = retryButton, nodes.contains(retry) || nodes.contains(where: { $0.name == "label" && $0.parent == retry }) {
             overDelegate?.gameOverSceneDidRequestRetry(self)
         } else if let home = homeButton, nodes.contains(home) || nodes.contains(where: { $0.name == "label" && $0.parent == home }) {
@@ -185,11 +249,88 @@ public final class GameOverScene: SKScene {
     }
 
     private func handleContinue() {
-        guard viewModel.rewardedReady, let view = view, let controller = view.window?.rootViewController else { return }
+        guard let view = view, let controller = view.window?.rootViewController else { return }
+        guard viewModel.rewardedReady else {
+            showStatusMessage("Ad loading…", success: false)
+            viewModel.preloadRewarded()
+            return
+        }
         continueButton?.alpha = 0.4
-        viewModel.showRewarded(from: controller) { [weak self] in
+        viewModel.showRewarded(from: controller) { [weak self] result in
             guard let self else { return }
-            self.overDelegate?.gameOverSceneDidRequestRevive(self)
+            switch result {
+            case .success:
+                self.showStatusMessage("Revived via ad!", success: true)
+                self.overDelegate?.gameOverSceneDidRequestRevive(self)
+            case .failure:
+                self.showStatusMessage("Ad unavailable. Try again soon.", success: false)
+            }
+            self.updateRewardedAvailability()
+        }
+    }
+
+    private func handleGemContinue() {
+        guard viewModel.canAffordGemRevive() else {
+            showStatusMessage("Need \(viewModel.gemReviveCost) gems to revive.", success: false)
+            return
+        }
+        if viewModel.spendGemsForRevive() {
+            updateGemBalanceIfNeeded()
+            updateGemButtonState()
+            showStatusMessage("Revived for \(viewModel.gemReviveCost) gems!", success: true)
+            overDelegate?.gameOverSceneDidRequestRevive(self)
+        } else {
+            showStatusMessage("Gem spend failed.", success: false)
+        }
+    }
+
+    private func updateGemBalanceIfNeeded() {
+        let balance = viewModel.currentGemBalance()
+        if balance != lastGemBalance {
+            lastGemBalance = balance
+            gemBalanceLabel?.text = "Gems: \(balance)"
+        }
+    }
+
+    private func updateGemButtonState() {
+        let enabled = viewModel.canAffordGemRevive()
+        gemContinueButton?.alpha = enabled ? 1.0 : 0.4
+    }
+
+    private func updateRewardedAvailability() {
+        let ready = viewModel.rewardedReady
+        if ready != lastRewardedReady {
+            continueButton?.alpha = ready ? 1.0 : 0.4
+            lastRewardedReady = ready
+        }
+    }
+
+    private func showStatusMessage(_ text: String, success: Bool) {
+        guard let label = monetizationStatusLabel else { return }
+        label.removeAllActions()
+        label.text = text
+        label.fontColor = success ? GamePalette.cyan : UIColor.systemRed
+        label.alpha = 1.0
+        statusMessageRemaining = 2.5
+    }
+
+    public override func update(_ currentTime: TimeInterval) {
+        updateRewardedAvailability()
+        updateGemButtonState()
+        updateGemBalanceIfNeeded()
+        let delta: TimeInterval
+        if lastUpdateTime == 0 {
+            delta = 0
+        } else {
+            delta = currentTime - lastUpdateTime
+        }
+        lastUpdateTime = currentTime
+        if statusMessageRemaining > 0 {
+            statusMessageRemaining = max(0, statusMessageRemaining - delta)
+        }
+        if statusMessageRemaining == 0, let label = monetizationStatusLabel, label.alpha > 0 {
+            label.run(SKAction.fadeOut(withDuration: 0.25))
+            statusMessageRemaining = -1
         }
     }
 }
