@@ -736,6 +736,8 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         } else {
             performFlip(doubleJump: false)
         }
+        doubleFlipArmed = false
+        doubleFlipReadyTime = 0
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
