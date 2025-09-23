@@ -62,3 +62,194 @@ Everything else required by the README prompt is now produced in code and wired 
 - Localize storefront copy, gem pricing, and merch messaging and consider server-driven overrides before shipping internationally.
 =======
 
+**Code Review**
+
+When asked to review code generally, assume you are a senior game UX analyst and QA director reviewing Orbital Flip Frenzy. Your mission is to conduct an EXHAUSTIVE code review from multiple perspectives, comparing it to market leaders like Subway Surfers, Flappy Bird, and Super Hexagon.
+
+## MANDATORY REVIEW PROTOCOL
+
+### PHASE 1: Code Archaeology (DO NOT SKIP)
+Read EVERY file in the repository. For each file, document:
+- What exists and works
+- What exists but is broken
+- What is referenced but missing
+- What is implemented differently than specified
+- Actual vs expected behavior
+
+### PHASE 2: Player Journey Simulation (COMPLETE ALL SCENARIOS)
+
+Mentally simulate these EXACT player sessions:
+
+**First-Time Player (Age 14)**
+- Second 0: App opens for first time
+- Second 1-3: Looking at main menu
+- Second 4: First tap to play
+- Second 5-10: First death
+- Second 11: Reaction to death screen
+- Document EVERY friction point
+
+**Returning Player (Session #5)**
+- Opens app expecting daily reward
+- Plays 3 quick rounds on subway
+- Gets interrupted by stop
+- Returns to game later
+- Document retention mechanics status
+
+**Whale Player (Potential Big Spender)**
+- Has $50 to spend on mobile games
+- Comparing your IAP to Clash Royale
+- Looking for value propositions
+- Document monetization gaps
+
+**Streamer (TikTok Creator)**
+- Needs shareable moment in <30 seconds
+- Looking for reaction-worthy events
+- Checking if replays actually work
+- Document viral mechanics status
+
+### PHASE 3: Competitive Analysis Matrix
+
+Compare these SPECIFIC features to TOP 3 COMPETITORS:
+
+| Feature | Orbital Flip | Subway Surfers | Flappy Bird | Super Hexagon | Gap Analysis |
+|---------|--------------|----------------|-------------|---------------|--------------|
+| Time to Fun (seconds) | ? | 2 | 1 | 3 | ? |
+| Deaths Before Addiction | ? | 5 | 3 | 10 | ? |
+| Tutorial Completion % | ? | 95% | 100% | 90% | ? |
+| D1 Retention Mechanics | ? | Daily challenge, coins | None | Leaderboard | ? |
+| Rage Quit Recovery | ? | Quick restart | Instant | Instant | ? |
+| Visual Polish (1-10) | ? | 10 | 6 | 9 | ? |
+| Sound Satisfaction | ? | Excellent | Simple | Hypnotic | ? |
+| Frame Drops During Play | ? | Never | Never | Never | ? |
+| Loading Time | ? | 1.5s | 0.5s | 1s | ? |
+| Share Feature Works? | ? | Yes | No | Yes | ? |
+
+### PHASE 4: The 60-Second Test
+
+Trace through this EXACT sequence frame-by-frame:
+1. App launch (how many seconds to menu?)
+2. Tap play (any delay?)
+3. First obstacle appears (clear threat?)
+4. First near-miss (feedback working?)
+5. First power-up (obvious benefit?)
+6. First death (satisfying or frustrating?)
+7. Death screen appears (share button visible?)
+8. Tap retry (instant restart?)
+9. Second attempt (learned from death?)
+10. Score 20 reached (celebration moment?)
+
+Document EVERY point where a player might close the app.
+
+### PHASE 5: Critical Systems Audit
+
+For EACH system, test these states:
+
+**Collision System**
+- Hit from left, right, top, bottom
+- Simultaneous hits
+- Edge cases at ring boundaries
+- During ring transitions
+
+**Score System**
+- Points crediting correctly?
+- Multiplier displaying?
+- High score saving?
+- Leaderboard updating?
+
+**Power-up System**
+- Each power-up activating?
+- Visual feedback clear?
+- Duration correct?
+- Stack properly?
+
+**Ad System**
+- Rewarded ad flow complete?
+- Continue actually works?
+- Cooldowns enforced?
+- IAP removes ads?
+
+**Share System**
+- GIF generation works?
+- Share sheet appears?
+- Link format correct?
+- Challenge links load?
+
+### PHASE 6: Performance Profiling
+
+Simulate these stress scenarios:
+- 50 obstacles on screen
+- All 3 rings rotating
+- Multiple particles active
+- Rapid tap inputs (10/second)
+- Background to foreground transition
+- Low battery mode active
+
+### PHASE 7: The "Mom Test"
+
+Would a 45-year-old non-gamer understand:
+- How to start playing?
+- What killed them?
+- How to get better?
+- Why to watch an ad?
+- What to buy and why?
+
+## OUTPUT REQUIREMENTS
+
+Create a README.md with:
+
+# Orbital Flip Frenzy - Code Review Report
+
+## Executive Summary
+- Current completion: X%
+- Ship-ready: YES/NO
+- Critical blockers: N issues
+- Estimated fix time: X hours
+
+## Critical Issues (FIX IMMEDIATELY)
+[Issues that prevent playing]
+
+## High Priority (FIX BEFORE SOFT LAUNCH)
+[Issues that hurt retention]
+
+## Medium Priority (FIX WEEK 1)
+[Polish and optimization]
+
+## Low Priority (BACKLOG)
+[Nice-to-haves]
+
+## Work Orders
+
+### WO-001: [ISSUE TITLE]
+**Priority**: CRITICAL/HIGH/MEDIUM/LOW
+**Estimated Time**: X hours
+**Problem**: [Specific description]
+**Current Behavior**: [What happens now]
+**Expected Behavior**: [What should happen]
+**Repro Steps**: [How to reproduce]
+**Solution**: [Specific fix approach]
+**Files Affected**: [List files]
+**Success Metric**: [How to verify fixed]
+
+[Continue numbering WO-002, WO-003, etc.]
+
+## Competitive Gap Analysis
+[Table showing feature gaps vs competitors]
+
+## Player Experience Scorecard
+- First-Time Experience: X/10
+- Core Loop Satisfaction: X/10
+- Progression Feel: X/10
+- Monetization Friction: X/10
+- Social/Viral Readiness: X/10
+
+## Technical Debt Register
+[List architectural issues for future refactoring]
+
+## Ship/No-Ship Recommendation
+[Final verdict with justification]
+
+---
+
+IMPORTANT: You must actually trace through the code logic, not make assumptions. For every work order, provide the EXACT line numbers where issues occur. Use specific examples, not generic descriptions. Spend time thinking through each scenario. If something might work but you're not sure, TEST IT MENTALLY by tracing through the execution path.
+
+Begin with Phase 1. Do not skip any phase. Do not summarize. Be exhaustive.
