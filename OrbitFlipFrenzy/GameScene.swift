@@ -266,6 +266,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var eventBannerLabel: SKLabelNode?
     private var shieldAura: SKShapeNode?
     private var inversionOverlay: SKSpriteNode?
+    private var meteorEmitter: SKEmitterNode?
 
     private var lastUpdate: TimeInterval = 0
     private var spawnTimer: TimeInterval = 0
@@ -295,12 +296,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private lazy var nearMissTexture: SKTexture? = assets.makeParticleTexture(radius: 6, color: GamePalette.solarGold)
     private lazy var scoreBurstTexture: SKTexture? = assets.makeParticleTexture(radius: 4, color: GamePalette.neonMagenta)
     private lazy var meteorParticleTexture: SKTexture? = assets.makeParticleTexture(radius: 3, color: .white)
-    private lazy var scoreFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 0
-        return formatter
-    }()
+
 
     private var currentTimeSnapshot: TimeInterval = 0
 
@@ -350,7 +346,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         lastStreakMultiplier = viewModel.streakMultiplier
         activePowerupTypes = Set(powerups.activeTypes)
         updateHUD()
-        updatePowerupHUDIfNeeded()
+        updatePowerupHUD()
         viewModel.registerStart()
         specialEventsTriggered.removeAll()
     }
@@ -558,18 +554,24 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
-    private func updatePowerupHUDIfNeeded() {
+    private func updatePowerupHUD() {
         let current = Set(powerups.activeTypes)
-        guard current != activePowerupTypes else { return }
-        activePowerupTypes = current
         if current.isEmpty {
-            powerupLabel?.text = "None"
-            powerupLabel?.fontColor = UIColor.white.withAlphaComponent(0.85)
-        } else {
-            let names = current.map { $0.displayName }.sorted()
-            powerupLabel?.text = names.joined(separator: ", ")
-            powerupLabel?.fontColor = GamePalette.cyan
+
+       
+
+        activePowerupTypes = current
+        var highlightLowTime = false
+        let descriptions = current.sorted { $0.displayName < $1.displayName }.map { type -> String in
+            if let remaining = powerups.timeRemaining(for: type, currentTime: currentTimeSnapshot) {
+                let clamped = max(0, remaining)
+                if clamped < 1.0 { highlightLowTime = true }
+                return "\(type.displayName) " + String(format: "%.1fs", clamped)
+            }
+            return type.displayName
         }
+        powerupLabel?.text = "Power-ups: " + descriptions.joined(separator: ", ")
+        powerupLabel?.fontColor = highlightLowTime ? GamePalette.solarGold : GamePalette.cyan
     }
 
     private func updateShieldAura() {
@@ -775,9 +777,11 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         if gravityEnds > 0 && currentTime >= gravityEnds {
             gravityEnds = 0
+            showEventBanner("Gravity normalized")
         }
         if meteorShowerEnds > 0 && currentTime >= meteorShowerEnds {
             meteorShowerEnds = 0
+            stopMeteorEmitter()
         }
         if inversionEnds > 0 && currentTime >= inversionEnds {
             inversionEnds = 0
@@ -792,7 +796,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         updateGhostFollowing()
         applyMagnetIfNeeded(delta: delta)
         updateShieldAura()
-        updatePowerupHUDIfNeeded()
+        updatePowerupHUD()
         refreshStreakIfNeeded()
         handleSpecialEvents()
     }
@@ -833,9 +837,14 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         let angle = CGFloat.random(in: 0...(2 * .pi))
         obstacle.zRotation = angle
         obstacle.position = CGPoint(x: cos(angle) * ring.radius, y: sin(angle) * ring.radius)
+        let meteorActive = meteorShowerEnds > currentTimeSnapshot
         if let override = colorOverride {
             obstacle.fillColor = override
             obstacle.strokeColor = override
+        } else if meteorActive {
+            let rainbow = UIColor(hue: CGFloat.random(in: 0...1), saturation: 0.9, brightness: 1.0, alpha: 1.0)
+            obstacle.fillColor = rainbow
+            obstacle.strokeColor = rainbow
         } else {
             obstacle.fillColor = GamePalette.solarGold
             obstacle.strokeColor = GamePalette.cyan
@@ -981,7 +990,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
         powerups.activate(powerUp, currentTime: currentTime)
         viewModel.registerPowerup(powerUp)
-        updatePowerupHUDIfNeeded()
+        updatePowerupHUD()
         updateShieldAura()
     }
 
@@ -1093,23 +1102,85 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
                 self.inversionEnds = 0
             }
         ]))
+        playEventCelebration()
         showEventBanner("Color inversion!")
     }
 
     private func triggerMeteorShower() {
         meteorShowerEnds = currentTimeSnapshot + GameConstants.meteorShowerDuration
+        startMeteorEmitter()
         for _ in 0..<10 {
             let rainbow = UIColor(hue: CGFloat.random(in: 0...1), saturation: 0.9, brightness: 1.0, alpha: 1.0)
             if let meteor = spawnObstacle(at: currentTimeSnapshot, colorOverride: rainbow) {
                 attachMeteorTrail(to: meteor, color: rainbow)
             }
         }
+        playEventCelebration()
         showEventBanner("Rainbow meteor shower!")
     }
 
     private func triggerGravityReversal() {
         gravityEnds = currentTimeSnapshot + GameConstants.gravityReversalDuration
+        playEventCelebration()
         showEventBanner("Gravity reversed!")
+    }
+
+    private func playEventCelebration() {
+        sound.play(.milestone)
+        haptics.milestone()
+    }
+
+    private func startMeteorEmitter() {
+        stopMeteorEmitter(immediate: true)
+        guard let texture = meteorParticleTexture else { return }
+        let emitter = SKEmitterNode()
+        emitter.particleTexture = texture
+        emitter.particleBirthRate = 160
+        emitter.particleLifetime = 1.2
+        emitter.particleSpeed = 260
+        emitter.particleSpeedRange = 90
+        emitter.emissionAngle = -.pi / 2.3
+        emitter.emissionAngleRange = .pi / 6
+        emitter.particlePositionRange = CGVector(dx: size.width * 1.1, dy: 0)
+        emitter.position = CGPoint(x: 0, y: size.height * 0.45)
+        emitter.zPosition = 30
+        emitter.particleAlpha = 0.9
+        emitter.particleAlphaSpeed = -1.0
+        emitter.particleScale = 0.35
+        emitter.particleScaleSpeed = -0.22
+        emitter.particleRotation = -.pi / 4
+        emitter.particleColorBlendFactor = 1.0
+        emitter.particleBlendMode = .add
+        let sequence = SKKeyframeSequence(keyframeValues: [
+            UIColor.red,
+            UIColor.orange,
+            UIColor.yellow,
+            UIColor.green,
+            UIColor.cyan,
+            UIColor.blue,
+            UIColor.purple
+        ], times: [0, 0.16, 0.33, 0.5, 0.66, 0.83, 1.0].map { NSNumber(value: $0) })
+        emitter.particleColorSequence = sequence
+        emitter.alpha = 0
+        addChild(emitter)
+        emitter.run(SKAction.fadeIn(withDuration: 0.25))
+        meteorEmitter = emitter
+    }
+
+    private func stopMeteorEmitter(immediate: Bool = false) {
+        guard let emitter = meteorEmitter else { return }
+        emitter.removeAllActions()
+        if immediate {
+            emitter.removeFromParent()
+            meteorEmitter = nil
+            return
+        }
+        let cleanup = SKAction.run { [weak self] in self?.meteorEmitter = nil }
+        emitter.run(SKAction.sequence([
+            SKAction.fadeOut(withDuration: 0.3),
+            SKAction.removeFromParent(),
+            cleanup
+        ]))
     }
 
     // MARK: - Contact Handling
@@ -1149,6 +1220,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         inversionOverlay?.removeAllActions()
         inversionOverlay?.removeFromParent()
         inversionOverlay = nil
+        stopMeteorEmitter(immediate: true)
         inversionEnds = 0
         eventBannerNode?.removeAllActions()
         eventBannerNode?.alpha = 0
@@ -1168,8 +1240,12 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         if withShield {
             powerups.activate(.shield(duration: GameConstants.powerupShieldDuration), currentTime: currentTimeSnapshot)
         }
+        stopMeteorEmitter(immediate: true)
+        meteorShowerEnds = 0
+        gravityEnds = 0
+        inversionEnds = 0
         updateShieldAura()
-        updatePowerupHUDIfNeeded()
+        updatePowerupHUD()
         updateHUD()
         spawnTimer = 0
         specialEventsTriggered.removeAll()

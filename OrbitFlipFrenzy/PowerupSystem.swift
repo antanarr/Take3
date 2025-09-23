@@ -45,6 +45,7 @@ public protocol PowerupManaging {
     func isActive(_ type: PowerUpType, currentTime: TimeInterval) -> Bool
     func currentPowerUp(of type: PowerUpType) -> PowerUp?
     func update(currentTime: TimeInterval)
+    func timeRemaining(for type: PowerUpType, currentTime: TimeInterval) -> TimeInterval?
     var activeTypes: [PowerUpType] { get }
 }
 
@@ -74,6 +75,11 @@ public final class PowerupManager: PowerupManaging {
 
     public func update(currentTime: TimeInterval) {
         active.removeAll { currentTime >= $0.expiresAt }
+    }
+
+    public func timeRemaining(for type: PowerUpType, currentTime: TimeInterval) -> TimeInterval? {
+        guard let entry = active.first(where: { $0.type.type == type }) else { return nil }
+        return max(0, entry.expiresAt - currentTime)
     }
 
     public var activeTypes: [PowerUpType] {
