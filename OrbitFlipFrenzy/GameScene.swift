@@ -121,8 +121,10 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
 
         func currentSpawnRate() -> TimeInterval {
-            max(GameConstants.minimumSpawnRate,
-                GameConstants.baseSpawnRate - (TimeInterval(level - 1) * GameConstants.spawnRateReductionPerLevel))
+            max(
+                GameConstants.minimumSpawnRate,
+                GameConstants.baseSpawnRate - (TimeInterval(level) * GameConstants.spawnRateReductionPerLevel)
+            )
         }
 
         private func checkMilestones() {
@@ -154,6 +156,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         func registerPowerup(_ powerup: PowerUp) {
             analytics.track(.powerupUsed(type: powerup))
             sound.play(.powerupCollect)
+            haptics.playerAction()
         }
 
         func finalizeScore() {
@@ -304,6 +307,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var doubleFlipArmed = false
     private var doubleFlipReadyTime: TimeInterval = 0
     private var activeRingCount = 1
+    private var currentRingIndex = 0
     private var tutorialObstaclesRemaining = GameConstants.tutorialGhostObstacles
 
     private var meteorShowerEnds: TimeInterval = 0
@@ -322,6 +326,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private lazy var nearMissTexture: SKTexture? = assets.makeParticleTexture(radius: 6, color: GamePalette.solarGold)
     private lazy var scoreBurstTexture: SKTexture? = assets.makeParticleTexture(radius: 4, color: GamePalette.neonMagenta)
     private lazy var meteorParticleTexture: SKTexture? = assets.makeParticleTexture(radius: 3, color: .white)
+    private lazy var shieldBreakTexture: SKTexture? = assets.makeParticleTexture(radius: 5, color: GamePalette.cyan)
 
 
     private var currentTimeSnapshot: TimeInterval = 0
@@ -366,7 +371,14 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         configureSocialProof()
         configureHUD()
 
+        powerups.reset()
+        powerUpNodes.forEach { $0.removeFromParent() }
+        powerUpNodes.removeAll()
+
         viewModel.reset()
+        isGameOver = false
+        spawnTimer = 0
+        lastUpdate = 0
         lastKnownLevel = viewModel.level
         lastStreakActive = viewModel.isStreakMultiplierActive
         lastStreakMultiplier = viewModel.streakMultiplier
@@ -402,9 +414,10 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func configurePlayer() {
         playerNode = assets.makePlayerNode()
-        guard let firstRing = ringContainers.first else { return }
-        firstRing.node.addChild(playerNode)
-        playerNode.position = CGPoint(x: firstRing.radius, y: 0)
+        playerNode.zPosition = 40
+        addChild(playerNode)
+        currentRingIndex = 0
+        positionPlayer(onRing: currentRingIndex, animated: false)
     }
 
     private func configureGhost() {
@@ -758,6 +771,10 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
+
+    private func playerWorldPosition() -> CGPoint {
+        playerNode.position
+=======
     private func updateGemBalanceDisplay() {
         let balance = viewModel.currentGems()
         if balance != lastKnownGemBalance {
@@ -798,6 +815,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func nodesContainShieldButton(_ nodes: [SKNode]) -> Bool {
         guard let button = shieldPurchaseButton else { return false }
         return nodes.contains(where: { $0 == button || ($0.name == "label" && $0.parent == button) })
+
     }
 
     private func emitNearMiss(at position: CGPoint) {
@@ -820,6 +838,30 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         addChild(emitter)
         emitter.run(SKAction.sequence([
             SKAction.wait(forDuration: 0.7),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    private func showShieldBreak(at position: CGPoint) {
+        guard let texture = shieldBreakTexture else { return }
+        let emitter = SKEmitterNode()
+        emitter.particleTexture = texture
+        emitter.numParticlesToEmit = 32
+        emitter.particleLifetime = 0.45
+        emitter.particleBirthRate = 200
+        emitter.particleAlpha = 0.85
+        emitter.particleAlphaSpeed = -1.6
+        emitter.particleSpeed = 160
+        emitter.particleSpeedRange = 60
+        emitter.particleScale = 0.4
+        emitter.particleScaleSpeed = -0.3
+        emitter.particleColorBlendFactor = 1
+        emitter.particleColor = GamePalette.cyan
+        emitter.position = position
+        emitter.zPosition = 85
+        addChild(emitter)
+        emitter.run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.35),
             SKAction.removeFromParent()
         ]))
     }
@@ -934,6 +976,8 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         } else {
             performFlip(doubleJump: false)
         }
+        doubleFlipArmed = false
+        doubleFlipReadyTime = 0
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -943,9 +987,25 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         doubleFlipArmed = false
     }
 
+    private func positionPlayer(onRing index: Int, animated: Bool) {
+        guard ringContainers.indices.contains(index) else { return }
+        let radius = ringContainers[index].radius
+        let angle = atan2(playerNode.position.y, playerNode.position.x)
+        let destination = CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
+        playerNode.removeAction(forKey: "flip")
+        if animated {
+            let move = SKAction.move(to: destination, duration: 0.12)
+            move.timingMode = .easeInEaseOut
+            playerNode.run(move, withKey: "flip")
+        } else {
+            playerNode.position = destination
+        }
+    }
+
     private func performFlip(doubleJump: Bool) {
         guard currentTimeSnapshot - lastTapTime >= GameConstants.tapCooldown else { return }
-        guard let parent = playerNode.parent, let currentIndex = ringContainers.firstIndex(where: { $0.node == parent }) else { return }
+        guard activeRingCount > 0 else { return }
+        let currentIndex = currentRingIndex
         var step = doubleJump ? 2 : 1
         if currentIndex >= activeRingCount - 1 {
             step = -step
@@ -956,17 +1016,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         } else if targetIndex >= activeRingCount {
             targetIndex = max(0, currentIndex - abs(step))
         }
-        guard targetIndex != currentIndex else { return }
-        let targetRing = ringContainers[targetIndex]
-        let converted = parent.convert(playerNode.position, to: self)
-        let local = convert(converted, to: targetRing.node)
-        playerNode.removeFromParent()
-        targetRing.node.addChild(playerNode)
-        let destination = local.normalized(to: targetRing.radius)
-        playerNode.position = destination
-        let move = SKAction.move(to: destination, duration: 0.12)
-        move.timingMode = .easeInEaseOut
-        playerNode.run(move)
+        guard targetIndex != currentIndex, ringContainers.indices.contains(targetIndex) else { return }
+        currentRingIndex = targetIndex
+        positionPlayer(onRing: currentRingIndex, animated: true)
         lastTapTime = currentTimeSnapshot
         viewModel.registerFlip()
         if doubleJump {
@@ -1096,7 +1148,15 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             newActive = GameConstants.maxRings
         }
         if newActive != activeRingCount {
+            let previous = activeRingCount
             activeRingCount = newActive
+            if currentRingIndex >= activeRingCount {
+                currentRingIndex = max(0, activeRingCount - 1)
+                positionPlayer(onRing: currentRingIndex, animated: true)
+            }
+            if newActive > previous {
+                showEventBanner("New orbit unlocked!")
+            }
         }
     }
 
@@ -1152,7 +1212,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         let points = viewModel.handleSafePass()
         obstaclePool.recycle(obstacle)
         updateHUD()
-        let playerPosition = playerNode.parent?.convert(playerNode.position, to: self) ?? .zero
+        let playerPosition = playerWorldPosition()
         showScorePopup(for: points, at: playerPosition)
         if viewModel.level != lastKnownLevel {
             lastKnownLevel = viewModel.level
@@ -1161,7 +1221,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func handleNearMissCheck(for obstacle: SKShapeNode) {
-        let playerPosition = playerNode.parent?.convert(playerNode.position, to: self) ?? .zero
+        let playerPosition = playerWorldPosition()
         let obstaclePosition = obstacle.parent?.convert(obstacle.position, to: self) ?? .zero
         let distance = hypot(playerPosition.x - obstaclePosition.x, playerPosition.y - obstaclePosition.y)
         let alreadyNear = obstacle.userData?["near"] as? Bool ?? false
@@ -1176,13 +1236,12 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func updatePowerups(currentTime: TimeInterval) {
         powerups.update(currentTime: currentTime)
+        let playerPosition = playerWorldPosition()
         for (index, node) in powerUpNodes.enumerated().reversed() {
-            let playerPosition = playerNode.parent?.convert(playerNode.position, to: self) ?? .zero
             let nodePosition = node.parent?.convert(node.position, to: self) ?? .zero
             let distance = hypot(playerPosition.x - nodePosition.x, playerPosition.y - nodePosition.y)
             if distance < 36 {
                 applyPowerUp(node)
-                powerUpNodes.remove(at: index)
             } else if let spawn = node.userData?["spawn"] as? TimeInterval, currentTime - spawn > 5.0 {
                 node.removeFromParent()
                 powerUpNodes.remove(at: index)
@@ -1192,21 +1251,27 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func applyPowerUp(_ node: SKShapeNode) {
         guard let type = determinePowerUpType(from: node) else { return }
+        powerUpNodes.removeAll { $0 === node }
         node.removeFromParent()
         let currentTime = currentTimeSnapshot
         let powerUp: PowerUp
+        let message: String
         switch type {
         case .shield:
             powerUp = .shield(duration: GameConstants.powerupShieldDuration)
+            message = "Shield online!"
         case .slowMo:
             powerUp = .slowMo(factor: GameConstants.powerupSlowFactor, duration: GameConstants.powerupShieldDuration)
+            message = "Time dilated!"
         case .magnet:
             powerUp = .magnet(strength: GameConstants.magnetStrength, duration: GameConstants.powerupShieldDuration)
+            message = "Magnet engaged!"
         }
         powerups.activate(powerUp, currentTime: currentTime)
         viewModel.registerPowerup(powerUp)
         updatePowerupHUD()
         updateShieldAura()
+        showEventBanner(message)
     }
 
     private func determinePowerUpType(from node: SKShapeNode) -> PowerUpType? {
@@ -1222,7 +1287,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             return
         }
         guard let ring = ringContainers.first else { return }
-        let angle = playerNode.parent?.convert(playerNode.position, to: ring.node) ?? .zero
+        let angle = convert(playerNode.position, to: ring.node)
         let currentAngle = atan2(angle.y, angle.x)
         let ghostTarget = CGPoint(x: cos(currentAngle) * (ring.radius + 30), y: sin(currentAngle) * (ring.radius + 30))
         let action = SKAction.move(to: ghostTarget, duration: 0.3)
@@ -1250,8 +1315,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
               let strength = magnet.magnetStrength,
               powerups.isActive(.magnet, currentTime: currentTimeSnapshot) else { return }
         let obstacles = obstaclePool.allActive()
-        guard !obstacles.isEmpty, let parent = playerNode.parent else { return }
-        let playerPosition = parent.convert(playerNode.position, to: self)
+        guard !obstacles.isEmpty else { return }
+        if playerNode.action(forKey: "flip") != nil { return }
+        let playerPosition = playerWorldPosition()
         guard let obstacle = obstacles.min(by: { lhs, rhs in
             let left = lhs.parent?.convert(lhs.position, to: self) ?? .zero
             let right = rhs.parent?.convert(rhs.position, to: self) ?? .zero
@@ -1268,7 +1334,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         guard radius > GameConstants.magnetSafeZoneRadius else { return }
         let newAngle = currentAngle + adjustment
         let newPosition = CGPoint(x: cos(newAngle) * radius, y: sin(newAngle) * radius)
-        playerNode.position = convert(newPosition, to: parent)
+        playerNode.position = newPosition
     }
 
     private func handleSpecialEvents() {
@@ -1398,7 +1464,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         let bodies = [contact.bodyA, contact.bodyB]
         if bodies.contains(where: { $0.categoryBitMask == PhysicsCategory.obstacle }) &&
             bodies.contains(where: { $0.categoryBitMask == PhysicsCategory.player }) {
-            handleCollision(withShieldCheck: powerups.isActive(.shield, currentTime: currentTimeSnapshot))
+            let obstacleNode = bodies.first(where: { $0.categoryBitMask == PhysicsCategory.obstacle })?.node as? SKShapeNode
+            handleCollision(withShieldCheck: powerups.isActive(.shield, currentTime: currentTimeSnapshot),
+                            obstacle: obstacleNode)
         }
         if bodies.contains(where: { $0.categoryBitMask == PhysicsCategory.powerUp }) &&
             bodies.contains(where: { $0.categoryBitMask == PhysicsCategory.player }) {
@@ -1408,13 +1476,36 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
-    private func handleCollision(withShieldCheck hasShield: Bool) {
+    private func handleCollision(withShieldCheck hasShield: Bool, obstacle: SKShapeNode?) {
         if hasShield {
-            sound.play(.collision)
+            absorbCollision(with: obstacle)
             return
         }
         shake(intensity: 6.0)
         endGame()
+    }
+
+    private func absorbCollision(with obstacle: SKShapeNode?) {
+        sound.play(.collision)
+        haptics.playerAction()
+        let impactPosition: CGPoint
+        if let obstacle {
+            impactPosition = obstacle.parent?.convert(obstacle.position, to: self) ??
+                playerWorldPosition()
+            obstaclePool.recycle(obstacle)
+        } else {
+            impactPosition = playerWorldPosition()
+        }
+        showShieldBreak(at: impactPosition)
+        let flash = SKAction.sequence([
+            SKAction.scale(to: 1.2, duration: 0.08),
+            SKAction.scale(to: 1.0, duration: 0.12)
+        ])
+        playerNode.run(flash)
+        powerups.deactivate(.shield)
+        updateShieldAura()
+        updatePowerupHUD()
+        showEventBanner("Shield absorbed the hit!")
     }
 
     private func endGame() {
@@ -1446,6 +1537,10 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     public func revivePlayer(withShield: Bool) {
         guard isGameOver else { return }
         isGameOver = false
+        powerups.reset()
+        powerUpNodes.forEach { $0.removeFromParent() }
+        powerUpNodes.removeAll()
+        activePowerupTypes.removeAll()
         if withShield {
             powerups.activate(.shield(duration: GameConstants.powerupShieldDuration), currentTime: currentTimeSnapshot)
         }
@@ -1453,10 +1548,15 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         meteorShowerEnds = 0
         gravityEnds = 0
         inversionEnds = 0
+        if activeRingCount > 0 {
+            currentRingIndex = min(currentRingIndex, activeRingCount - 1)
+            positionPlayer(onRing: currentRingIndex, animated: false)
+        }
         updateShieldAura()
         updatePowerupHUD()
         updateHUD()
         spawnTimer = 0
+        lastUpdate = currentTimeSnapshot
         specialEventsTriggered.removeAll()
         obstaclePool.allActive().forEach { obstaclePool.recycle($0) }
         lastTapTime = currentTimeSnapshot
