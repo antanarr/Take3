@@ -250,13 +250,19 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var playerNode: SKShapeNode!
     private var ghostNode: SKShapeNode?
     private var socialProofLabel: SKLabelNode?
+    private var scoreStatNode: SKSpriteNode?
     private var scoreLabel: SKLabelNode?
+    private var multiplierStatNode: SKSpriteNode?
     private var multiplierLabel: SKLabelNode?
+    private var levelStatNode: SKSpriteNode?
     private var levelLabel: SKLabelNode?
+    private var powerupStatNode: SKSpriteNode?
     private var powerupLabel: SKLabelNode?
-    private var streakLabel: SKLabelNode?
-    private var streakBadge: SKShapeNode?
-    private var eventBanner: SKLabelNode?
+    private var streakBadge: SKSpriteNode?
+    private var streakTitleLabel: SKLabelNode?
+    private var streakSubtitleLabel: SKLabelNode?
+    private var eventBannerNode: SKSpriteNode?
+    private var eventBannerLabel: SKLabelNode?
     private var shieldAura: SKShapeNode?
     private var inversionOverlay: SKSpriteNode?
 
@@ -372,13 +378,8 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func configureGhost() {
-        let ghost = SKShapeNode(circleOfRadius: 32)
-        ghost.fillColor = GamePalette.solarGold.withAlphaComponent(0.1)
-        ghost.strokeColor = GamePalette.solarGold
-        ghost.lineWidth = 2
-        ghost.alpha = 0.3
+        let ghost = assets.makeGhostNode(radius: 32)
         ghost.zPosition = 5
-        ghost.name = "ghost"
         addChild(ghost)
         ghostNode = ghost
         ghost.isHidden = false
@@ -405,112 +406,111 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func configureHUD() {
-        scoreLabel?.removeFromParent()
-        multiplierLabel?.removeFromParent()
-        levelLabel?.removeFromParent()
-        powerupLabel?.removeFromParent()
+        scoreStatNode?.removeFromParent()
+        multiplierStatNode?.removeFromParent()
+        levelStatNode?.removeFromParent()
+        powerupStatNode?.removeFromParent()
         streakBadge?.removeFromParent()
-        eventBanner?.removeFromParent()
+        eventBannerNode?.removeFromParent()
 
-        let score = SKLabelNode(fontNamed: "Orbitron-Bold")
-        score.fontSize = 28
-        score.fontColor = .white
-        score.text = "Score: 0"
-        score.verticalAlignmentMode = .center
-        score.horizontalAlignmentMode = .center
-        score.zPosition = 50
-        addChild(score)
-        scoreLabel = score
+        scoreLabel = nil
+        multiplierLabel = nil
+        levelLabel = nil
+        powerupLabel = nil
+        streakTitleLabel = nil
+        streakSubtitleLabel = nil
+        eventBannerLabel = nil
 
-        let multiplier = SKLabelNode(fontNamed: "SFProRounded-Bold")
-        multiplier.fontSize = 18
-        multiplier.fontColor = GamePalette.cyan
-        multiplier.text = "Multiplier: x1.0"
-        multiplier.verticalAlignmentMode = .center
-        multiplier.horizontalAlignmentMode = .center
-        multiplier.zPosition = 50
-        addChild(multiplier)
-        multiplierLabel = multiplier
+        let statWidth = min(size.width * 0.32, 220)
+        let statSize = CGSize(width: statWidth, height: 64)
 
-        let level = SKLabelNode(fontNamed: "SFProRounded-Bold")
-        level.fontSize = 18
-        level.fontColor = GamePalette.solarGold
-        level.text = "Level 1"
-        level.verticalAlignmentMode = .center
-        level.horizontalAlignmentMode = .center
-        level.zPosition = 50
-        addChild(level)
-        levelLabel = level
+        let levelStat = assets.makeHUDStatNode(title: "Level",
+                                               value: "1",
+                                               size: statSize,
+                                               icon: .level)
+        levelStat.zPosition = 50
+        addChild(levelStat)
+        levelStatNode = levelStat
+        levelLabel = levelStat.childNode(withName: "hud_value") as? SKLabelNode
 
-        let power = SKLabelNode(fontNamed: "SFProRounded-Regular")
-        power.fontSize = 14
-        power.fontColor = UIColor.white.withAlphaComponent(0.8)
-        power.text = "Power-ups: None"
-        power.verticalAlignmentMode = .center
-        power.horizontalAlignmentMode = .center
-        power.zPosition = 50
-        addChild(power)
-        powerupLabel = power
+        let scoreStat = assets.makeHUDStatNode(title: "Score",
+                                               value: "0",
+                                               size: statSize,
+                                               icon: .trophy)
+        scoreStat.zPosition = 50
+        addChild(scoreStat)
+        scoreStatNode = scoreStat
+        scoreLabel = scoreStat.childNode(withName: "hud_value") as? SKLabelNode
 
-        let badge = SKShapeNode(rectOf: CGSize(width: 200, height: 40), cornerRadius: 20)
-        badge.fillColor = GamePalette.solarGold.withAlphaComponent(0.15)
-        badge.strokeColor = GamePalette.solarGold
-        badge.lineWidth = 2
-        badge.alpha = 0.4
-        badge.zPosition = 50
-        addChild(badge)
-        streakBadge = badge
+        let multiplierStat = assets.makeHUDStatNode(title: "Multiplier",
+                                                    value: "x1.0",
+                                                    size: statSize,
+                                                    icon: .streak)
+        multiplierStat.zPosition = 50
+        addChild(multiplierStat)
+        multiplierStatNode = multiplierStat
+        multiplierLabel = multiplierStat.childNode(withName: "hud_value") as? SKLabelNode
 
-        let streakText = SKLabelNode(fontNamed: "SFProRounded-Bold")
-        streakText.fontSize = 16
-        streakText.fontColor = GamePalette.solarGold
-        streakText.verticalAlignmentMode = .center
-        streakText.horizontalAlignmentMode = .center
-        streakText.text = "Streak Ready"
-        streakText.zPosition = 51
-        badge.addChild(streakText)
-        streakLabel = streakText
+        let powerStatSize = CGSize(width: min(size.width * 0.65, 300), height: 60)
+        let powerStat = assets.makeHUDStatNode(title: "Power-Ups",
+                                               value: "None",
+                                               size: powerStatSize,
+                                               icon: .power)
+        powerStat.zPosition = 50
+        addChild(powerStat)
+        powerupStatNode = powerStat
+        powerupLabel = powerStat.childNode(withName: "hud_value") as? SKLabelNode
+        powerupLabel?.fontColor = UIColor.white.withAlphaComponent(0.85)
 
-        let banner = SKLabelNode(fontNamed: "Orbitron-Bold")
-        banner.fontSize = 20
-        banner.fontColor = GamePalette.solarGold
-        banner.verticalAlignmentMode = .center
-        banner.horizontalAlignmentMode = .center
-        banner.alpha = 0
+        let streak = assets.makeBadgeNode(title: "Build your streak",
+                                          subtitle: "Daily boost inactive",
+                                          size: CGSize(width: min(size.width * 0.45, 260), height: 64),
+                                          icon: .streak)
+        streak.alpha = 0.45
+        streak.zPosition = 50
+        addChild(streak)
+        streakBadge = streak
+        streakTitleLabel = streak.childNode(withName: "badge_title") as? SKLabelNode
+        streakSubtitleLabel = streak.childNode(withName: "badge_subtitle") as? SKLabelNode
+
+        let banner = assets.makeEventBanner(size: CGSize(width: min(size.width * 0.7, 320), height: 56), icon: .alert)
         banner.zPosition = 60
         addChild(banner)
-        eventBanner = banner
+        eventBannerNode = banner
+        eventBannerLabel = banner.childNode(withName: "banner_label") as? SKLabelNode
 
         layoutHUD()
+        updateStreakBadge()
     }
 
     private func layoutHUD() {
         let topY = size.height * 0.42
-        levelLabel?.position = CGPoint(x: -size.width * 0.35, y: topY)
-        scoreLabel?.position = CGPoint(x: 0, y: topY)
-        multiplierLabel?.position = CGPoint(x: 0, y: topY - 36)
+        levelStatNode?.position = CGPoint(x: -size.width * 0.35, y: topY)
+        scoreStatNode?.position = CGPoint(x: 0, y: topY)
+        multiplierStatNode?.position = CGPoint(x: size.width * 0.35, y: topY)
         if let badge = streakBadge {
-            badge.position = CGPoint(x: size.width * 0.35, y: topY)
+            badge.position = CGPoint(x: size.width * 0.35, y: topY - 78)
         }
-        powerupLabel?.position = CGPoint(x: 0, y: -size.height * 0.45)
-        eventBanner?.position = CGPoint(x: 0, y: size.height * 0.28)
+        powerupStatNode?.position = CGPoint(x: 0, y: -size.height * 0.42)
+        eventBannerNode?.position = CGPoint(x: 0, y: size.height * 0.3)
         inversionOverlay?.position = .zero
         inversionOverlay?.size = size
     }
 
     private func updateHUD() {
-        scoreLabel?.text = "Score: \(viewModel.score)"
+        scoreLabel?.text = "\(viewModel.score)"
         let totalMultiplier = Double(viewModel.totalMultiplier())
-        multiplierLabel?.text = String(format: "Multiplier: x%.1f", totalMultiplier)
-        levelLabel?.text = "Level \(viewModel.level)"
+        multiplierLabel?.text = String(format: "x%.1f", totalMultiplier)
+        levelLabel?.text = "\(viewModel.level)"
         updateStreakBadge()
     }
 
     private func updateStreakBadge() {
-        guard let badge = streakBadge, let label = streakLabel else { return }
+        guard let badge = streakBadge else { return }
         if viewModel.isStreakMultiplierActive {
             let multiplier = Double(viewModel.streakMultiplier)
-            label.text = String(format: "Streak x%.1f • %dd", multiplier, viewModel.streakDays)
+            streakTitleLabel?.text = String(format: "Streak x%.1f", multiplier)
+            streakSubtitleLabel?.text = "\(viewModel.streakDays)d active boost"
             badge.alpha = 1.0
             if badge.action(forKey: streakPulseActionKey) == nil {
                 let pulse = SKAction.sequence([
@@ -520,7 +520,8 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
                 badge.run(SKAction.repeatForever(pulse), withKey: streakPulseActionKey)
             }
         } else {
-            label.text = "Build your streak"
+            streakTitleLabel?.text = "Build your streak"
+            streakSubtitleLabel?.text = "Daily boost inactive"
             badge.alpha = 0.4
             badge.removeAction(forKey: streakPulseActionKey)
             badge.setScale(1.0)
@@ -532,11 +533,11 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         guard current != activePowerupTypes else { return }
         activePowerupTypes = current
         if current.isEmpty {
-            powerupLabel?.text = "Power-ups: None"
-            powerupLabel?.fontColor = UIColor.white.withAlphaComponent(0.8)
+            powerupLabel?.text = "None"
+            powerupLabel?.fontColor = UIColor.white.withAlphaComponent(0.85)
         } else {
             let names = current.map { $0.displayName }.sorted()
-            powerupLabel?.text = "Power-ups: " + names.joined(separator: ", ")
+            powerupLabel?.text = names.joined(separator: ", ")
             powerupLabel?.fontColor = GamePalette.cyan
         }
     }
@@ -636,8 +637,8 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func showEventBanner(_ text: String) {
-        guard let banner = eventBanner else { return }
-        banner.text = text
+        guard let banner = eventBannerNode, let label = eventBannerLabel else { return }
+        label.text = text
         banner.removeAllActions()
         banner.alpha = 0
         banner.run(SKAction.sequence([
@@ -1086,8 +1087,8 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         inversionOverlay?.removeFromParent()
         inversionOverlay = nil
         inversionEnds = 0
-        eventBanner?.removeAllActions()
-        eventBanner?.alpha = 0
+        eventBannerNode?.removeAllActions()
+        eventBannerNode?.alpha = 0
         let result = GameResult(score: viewModel.score,
                                 duration: viewModel.elapsedTime,
                                 nearMisses: viewModel.nearMisses,

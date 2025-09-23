@@ -44,8 +44,8 @@ public final class GameOverScene: SKScene {
             self.analytics = analytics
         }
 
-        func makeButton(title: String, size: CGSize) -> SKSpriteNode {
-            assets.makeButtonNode(text: title, size: size)
+        func makeButton(title: String, size: CGSize, icon: InterfaceIcon?) -> SKSpriteNode {
+            assets.makeButtonNode(text: title, size: size, icon: icon)
         }
 
         func showRewarded(from controller: UIViewController, completion: @escaping () -> Void) {
@@ -63,6 +63,7 @@ public final class GameOverScene: SKScene {
         func share(result: GameResult, from controller: UIViewController) {
             analytics.track(.shareInitiated)
             var items: [Any] = ["I flipped out at \(result.score)! 🚀"]
+            items.append(assets.makeAppIconImage(size: CGSize(width: 256, height: 256)))
             if let data = result.replayData {
                 let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("orbitflip.gif")
                 try? data.write(to: tempURL)
@@ -103,26 +104,33 @@ public final class GameOverScene: SKScene {
         addChild(assets.makeBackground(size: view.bounds.size))
         viewModel.playCollisionFeedback()
 
-        let title = SKLabelNode(text: "Don't lose your streak!")
-        title.fontName = "Orbitron-Bold"
-        title.fontSize = 28
-        title.fontColor = GamePalette.solarGold
-        title.position = CGPoint(x: 0, y: view.bounds.height * 0.2)
-        addChild(title)
+        let logoWidth = min(view.bounds.width * 0.65, 300)
+        let logo = assets.makeLogoNode(size: CGSize(width: logoWidth, height: logoWidth * 0.4))
+        logo.position = CGPoint(x: 0, y: view.bounds.height * 0.24)
+        logo.alpha = 0
+        logo.run(SKAction.fadeIn(withDuration: 0.8))
+        addChild(logo)
 
-        let scoreNode = SKLabelNode(text: "Score \(result.score)")
-        scoreNode.fontName = "Orbitron-Bold"
-        scoreNode.fontSize = 40
-        scoreNode.fontColor = .white
-        scoreNode.position = CGPoint(x: 0, y: title.position.y - 80)
-        addChild(scoreNode)
+        let iconSprite = SKSpriteNode(texture: SKTexture(image: assets.makeAppIconImage(size: CGSize(width: 140, height: 140))))
+        iconSprite.size = CGSize(width: 96, height: 96)
+        iconSprite.position = CGPoint(x: -logoWidth * 0.55, y: logo.position.y)
+        iconSprite.alpha = 0
+        iconSprite.run(SKAction.sequence([SKAction.wait(forDuration: 0.2), SKAction.fadeIn(withDuration: 0.7)]))
+        addChild(iconSprite)
 
-        let statsNode = SKLabelNode(text: "Near-misses: \(result.nearMisses) • Time: \(String(format: "%.1fs", result.duration))")
-        statsNode.fontName = "SFProRounded-Bold"
-        statsNode.fontColor = GamePalette.cyan
-        statsNode.fontSize = 18
-        statsNode.position = CGPoint(x: 0, y: scoreNode.position.y - 40)
-        addChild(statsNode)
+        let headline = SKLabelNode(text: "Don't lose your streak!")
+        headline.fontName = "Orbitron-Bold"
+        headline.fontSize = 26
+        headline.fontColor = GamePalette.solarGold
+        headline.position = CGPoint(x: 0, y: logo.position.y - logoWidth * 0.35)
+        addChild(headline)
+
+        let statsBadge = assets.makeBadgeNode(title: "Score \(result.score)",
+                                              subtitle: "Near-misses \(result.nearMisses) • Time \(String(format: "%.1fs", result.duration))",
+                                              size: CGSize(width: min(view.bounds.width * 0.82, 320), height: 78),
+                                              icon: .trophy)
+        statsBadge.position = CGPoint(x: 0, y: headline.position.y - 80)
+        addChild(statsBadge)
 
         let eventsText = result.triggeredEvents.sorted().map { "#\($0)" }.joined(separator: " ")
         if !eventsText.isEmpty {
@@ -130,27 +138,27 @@ public final class GameOverScene: SKScene {
             eventsLabel.fontName = "SFProRounded-Bold"
             eventsLabel.fontColor = GamePalette.neonMagenta
             eventsLabel.fontSize = 16
-            eventsLabel.position = CGPoint(x: 0, y: statsNode.position.y - 40)
+            eventsLabel.position = CGPoint(x: 0, y: statsBadge.position.y - 70)
             addChild(eventsLabel)
         }
 
-        shareButton = viewModel.makeButton(title: "Share Highlight", size: CGSize(width: 220, height: 60))
+        shareButton = viewModel.makeButton(title: "Share Highlight", size: CGSize(width: 220, height: 60), icon: .share)
         shareButton?.position = CGPoint(x: 0, y: -20)
         shareButton?.name = "share"
         if let shareButton { addChild(shareButton) }
 
-        continueButton = viewModel.makeButton(title: "Watch to Continue", size: CGSize(width: 240, height: 60))
+        continueButton = viewModel.makeButton(title: "Watch to Continue", size: CGSize(width: 240, height: 60), icon: .continue)
         continueButton?.position = CGPoint(x: 0, y: shareButton?.position.y ?? -20 - 80)
         continueButton?.name = "continue"
         if let continueButton { addChild(continueButton) }
         continueButton?.alpha = viewModel.rewardedReady ? 1.0 : 0.4
 
-        retryButton = viewModel.makeButton(title: "Retry", size: CGSize(width: 180, height: 60))
+        retryButton = viewModel.makeButton(title: "Retry", size: CGSize(width: 180, height: 60), icon: .retry)
         retryButton?.position = CGPoint(x: 0, y: (continueButton?.position.y ?? -100) - 80)
         retryButton?.name = "retry"
         if let retryButton { addChild(retryButton) }
 
-        homeButton = viewModel.makeButton(title: "Home", size: CGSize(width: 160, height: 54))
+        homeButton = viewModel.makeButton(title: "Home", size: CGSize(width: 160, height: 54), icon: .home)
         homeButton?.position = CGPoint(x: 0, y: (retryButton?.position.y ?? -180) - 70)
         homeButton?.name = "home"
         if let homeButton { addChild(homeButton) }
