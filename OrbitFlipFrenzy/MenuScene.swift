@@ -158,8 +158,8 @@ public final class MenuScene: SKScene {
             return decorated
         }
 
-        func createButton(title: String, size: CGSize) -> SKSpriteNode {
-            assets.makeButtonNode(text: title, size: size)
+        func createButton(title: String, size: CGSize, icon: InterfaceIcon?) -> SKSpriteNode {
+            assets.makeButtonNode(text: title, size: size, icon: icon)
         }
 
         func playStartSound() {
@@ -243,6 +243,7 @@ public final class MenuScene: SKScene {
     private let viewModel: ViewModel
     private let assets: AssetGenerating
     private var startButton: SKSpriteNode?
+
     private var streakLabel: SKLabelNode?
     private var multiplierCountdownLabel: SKLabelNode?
     private var gemBalanceLabel: SKLabelNode?
@@ -267,6 +268,7 @@ public final class MenuScene: SKScene {
     private var productsAnchorY: CGFloat = 0
     private var countdownAccumulator: TimeInterval = 0
     private var restoreButton: SKSpriteNode?
+
 
     public init(size: CGSize, viewModel: ViewModel, assets: AssetGenerating) {
         self.viewModel = viewModel
@@ -295,6 +297,7 @@ public final class MenuScene: SKScene {
         let background = assets.makeBackground(size: view.bounds.size)
         addChild(background)
 
+
         let heroWidth = min(view.bounds.width * 0.7, 320)
         let logo = assets.makeLogoNode(size: CGSize(width: heroWidth, height: heroWidth * 0.42))
         logo.position = CGPoint(x: 0, y: view.bounds.height * 0.3)
@@ -320,6 +323,35 @@ public final class MenuScene: SKScene {
 
         let start = viewModel.createButton(title: "Tap to Launch", size: CGSize(width: 240, height: 80))
         start.position = CGPoint(x: 0, y: tagline.position.y - 90)
+
+        let maxLogoWidth = min(view.bounds.width * 0.75, 360)
+        let logoSize = CGSize(width: maxLogoWidth, height: maxLogoWidth * 0.45)
+        let logo = assets.makeLogoNode(size: logoSize)
+        logo.position = CGPoint(x: 0, y: view.bounds.height * 0.25)
+        logo.alpha = 0
+        logo.run(SKAction.fadeIn(withDuration: 0.9))
+        addChild(logo)
+
+        let iconTexture = SKTexture(image: assets.makeAppIconImage(size: CGSize(width: 160, height: 160)))
+        let iconNode = SKSpriteNode(texture: iconTexture)
+        iconNode.size = CGSize(width: 108, height: 108)
+        iconNode.position = CGPoint(x: -logoSize.width * 0.55, y: logo.position.y + iconNode.size.height * 0.05)
+        iconNode.alpha = 0
+        iconNode.run(SKAction.sequence([SKAction.wait(forDuration: 0.2), SKAction.fadeIn(withDuration: 0.8)]))
+        addChild(iconNode)
+
+        let subtitle = SKLabelNode(text: "Flip faster, dodge harder, own the orbit.")
+        subtitle.fontName = "SFProRounded-Bold"
+        subtitle.fontSize = 16
+        subtitle.fontColor = GamePalette.cyan
+        subtitle.position = CGPoint(x: 0, y: logo.position.y - logoSize.height * 0.6)
+        subtitle.alpha = 0
+        subtitle.run(SKAction.sequence([SKAction.wait(forDuration: 0.35), SKAction.fadeIn(withDuration: 0.8)]))
+        addChild(subtitle)
+
+        let start = viewModel.createButton(title: "Tap to Launch", size: CGSize(width: 240, height: 80), icon: .play)
+        start.position = CGPoint(x: 0, y: -20)
+
         start.name = "start"
         start.alpha = 0
         start.run(SKAction.sequence([SKAction.wait(forDuration: 0.6), SKAction.fadeIn(withDuration: 0.6)]))
@@ -333,13 +365,21 @@ public final class MenuScene: SKScene {
         start.run(SKAction.repeatForever(pulse))
 
         let streak = viewModel.registerDailyStreak()
+
         let streakNode = SKLabelNode(text: "Daily Streak: \(streak.streakDays) days • Reward +\(Int(streak.reward)) gems")
         streakNode.fontName = "SFProRounded-Bold"
         streakNode.fontColor = .white
         streakNode.fontSize = 18
         streakNode.position = CGPoint(x: 0, y: start.position.y - 120)
+
+        let streakNode = assets.makeBadgeNode(title: "Daily Streak: \(streak.streakDays) days",
+                                              subtitle: "Reward +\(Int(streak.reward)) gems engaged",
+                                              size: CGSize(width: min(view.bounds.width * 0.85, 340), height: 74),
+                                              icon: .streak)
+        streakNode.position = CGPoint(x: 0, y: -view.bounds.height * 0.18)
+
         addChild(streakNode)
-        streakLabel = streakNode
+
 
         let multiplier = SKLabelNode(text: viewModel.multiplierCountdownText())
         multiplier.fontName = "SFProRounded-Regular"
@@ -430,6 +470,16 @@ public final class MenuScene: SKScene {
             self.layoutProducts(around: self.productsAnchorY)
             self.updateProductHighlight()
         }
+
+        let bestBadge = assets.makeBadgeNode(title: viewModel.highScoreText,
+                                             subtitle: "Personal Record",
+                                             size: CGSize(width: min(view.bounds.width * 0.8, 320), height: 68),
+                                             icon: .trophy)
+        bestBadge.position = CGPoint(x: 0, y: streakNode.position.y - 90)
+        addChild(bestBadge)
+
+        layoutProducts(around: bestBadge.position.y - 80)
+
     }
 
     private func layoutProducts(around y: CGFloat) {

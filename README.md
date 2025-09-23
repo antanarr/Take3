@@ -1,6 +1,9 @@
 # Take3
 
+
 This repository contains the Swift/SpriteKit implementation of **Orbit Flip Frenzy**, an iOS arcade title generated entirely from code. The goal of this README is to track follow-up tasks by discipline after reviewing the shipped code.
+
+=======
 
 ## Programmatic asset coverage
 
@@ -31,6 +34,7 @@ All in-game visuals and audio cues are generated at runtime so the build has no 
 
 Everything else required by the README prompt is now produced in code and wired into the live scenes.
 
+
 ## Task Tracker
 
 ### Monetization
@@ -56,3 +60,5 @@ Everything else required by the README prompt is now produced in code and wired 
 - Ensure rewarded ads pause gameplay audio/haptics, gracefully handle dismissals, and avoid duplicate reward grants on failure retries.
 - Verify receipt handling, entitlement persistence, and edge cases like refund/restoration across devices for StoreKit purchases.
 - Localize storefront copy, gem pricing, and merch messaging and consider server-driven overrides before shipping internationally.
+=======
+

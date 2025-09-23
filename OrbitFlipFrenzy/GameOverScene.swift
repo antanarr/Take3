@@ -47,8 +47,8 @@ public final class GameOverScene: SKScene {
             self.data = data
         }
 
-        func makeButton(title: String, size: CGSize) -> SKSpriteNode {
-            assets.makeButtonNode(text: title, size: size)
+        func makeButton(title: String, size: CGSize, icon: InterfaceIcon?) -> SKSpriteNode {
+            assets.makeButtonNode(text: title, size: size, icon: icon)
         }
 
         func preloadRewarded() {
@@ -76,6 +76,7 @@ public final class GameOverScene: SKScene {
         func share(result: GameResult, from controller: UIViewController) {
             analytics.track(.shareInitiated)
             var items: [Any] = ["I flipped out at \(result.score)! 🚀"]
+            items.append(assets.makeAppIconImage(size: CGSize(width: 256, height: 256)))
             if let data = result.replayData {
                 let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("orbitflip.gif")
                 try? data.write(to: tempURL)
@@ -177,14 +178,42 @@ public final class GameOverScene: SKScene {
         iconSprite.run(SKAction.sequence([SKAction.wait(forDuration: 0.2), SKAction.fadeIn(withDuration: 0.7)]))
         addChild(iconSprite)
 
+
+=======
+        let logoWidth = min(view.bounds.width * 0.65, 300)
+        let logo = assets.makeLogoNode(size: CGSize(width: logoWidth, height: logoWidth * 0.4))
+        logo.position = CGPoint(x: 0, y: view.bounds.height * 0.24)
+        logo.alpha = 0
+        logo.run(SKAction.fadeIn(withDuration: 0.8))
+        addChild(logo)
+
+        let iconSprite = SKSpriteNode(texture: SKTexture(image: assets.makeAppIconImage(size: CGSize(width: 140, height: 140))))
+        iconSprite.size = CGSize(width: 96, height: 96)
+        iconSprite.position = CGPoint(x: -logoWidth * 0.55, y: logo.position.y)
+        iconSprite.alpha = 0
+        iconSprite.run(SKAction.sequence([SKAction.wait(forDuration: 0.2), SKAction.fadeIn(withDuration: 0.7)]))
+        addChild(iconSprite)
+
+
         let headline = SKLabelNode(text: "Don't lose your streak!")
         headline.fontName = "Orbitron-Bold"
         headline.fontSize = 26
         headline.fontColor = GamePalette.solarGold
         headline.position = CGPoint(x: 0, y: logo.position.y - logoWidth * 0.35)
+
         headline.alpha = 0
         headline.run(SKAction.sequence([SKAction.wait(forDuration: 0.3), SKAction.fadeIn(withDuration: 0.6)]))
         addChild(headline)
+=======
+        addChild(headline)
+
+        let statsBadge = assets.makeBadgeNode(title: "Score \(result.score)",
+                                              subtitle: "Near-misses \(result.nearMisses) • Time \(String(format: "%.1fs", result.duration))",
+                                              size: CGSize(width: min(view.bounds.width * 0.82, 320), height: 78),
+                                              icon: .trophy)
+        statsBadge.position = CGPoint(x: 0, y: headline.position.y - 80)
+        addChild(statsBadge)
+
 
         let gemLabel = SKLabelNode(fontNamed: "Orbitron-Bold")
         gemLabel.fontSize = 18
@@ -215,10 +244,15 @@ public final class GameOverScene: SKScene {
             eventsLabel.fontName = "SFProRounded-Bold"
             eventsLabel.fontColor = GamePalette.neonMagenta
             eventsLabel.fontSize = 16
+
             eventsLabel.position = CGPoint(x: 0, y: statsBadge.position.y - badgeSize.height * 0.7)
+=======
+            eventsLabel.position = CGPoint(x: 0, y: statsBadge.position.y - 70)
+
             addChild(eventsLabel)
             nextAnchor = eventsLabel.position.y - 50
         }
+
 
         let buttonAnchor = nextAnchor - 20
 
@@ -229,6 +263,15 @@ public final class GameOverScene: SKScene {
 
         continueButton = viewModel.makeButton(title: "Watch to Continue", size: CGSize(width: 240, height: 60))
         continueButton?.position = CGPoint(x: 0, y: (shareButton?.position.y ?? buttonAnchor) - 80)
+=======
+        shareButton = viewModel.makeButton(title: "Share Highlight", size: CGSize(width: 220, height: 60), icon: .share)
+        shareButton?.position = CGPoint(x: 0, y: -20)
+        shareButton?.name = "share"
+        if let shareButton { addChild(shareButton) }
+
+        continueButton = viewModel.makeButton(title: "Watch to Continue", size: CGSize(width: 240, height: 60), icon: .continue)
+        continueButton?.position = CGPoint(x: 0, y: shareButton?.position.y ?? -20 - 80)
+
         continueButton?.name = "continue"
         if let continueButton { addChild(continueButton) }
 
@@ -237,12 +280,17 @@ public final class GameOverScene: SKScene {
         gemContinueButton?.name = "gem_continue"
         if let gemContinueButton { addChild(gemContinueButton) }
 
+
         retryButton = viewModel.makeButton(title: "Retry", size: CGSize(width: 180, height: 60))
         retryButton?.position = CGPoint(x: 0, y: (gemContinueButton?.position.y ?? -160) - 80)
+=======
+        retryButton = viewModel.makeButton(title: "Retry", size: CGSize(width: 180, height: 60), icon: .retry)
+        retryButton?.position = CGPoint(x: 0, y: (continueButton?.position.y ?? -100) - 80)
+
         retryButton?.name = "retry"
         if let retryButton { addChild(retryButton) }
 
-        homeButton = viewModel.makeButton(title: "Home", size: CGSize(width: 160, height: 54))
+        homeButton = viewModel.makeButton(title: "Home", size: CGSize(width: 160, height: 54), icon: .home)
         homeButton?.position = CGPoint(x: 0, y: (retryButton?.position.y ?? -180) - 70)
         homeButton?.name = "home"
         if let homeButton { addChild(homeButton) }
