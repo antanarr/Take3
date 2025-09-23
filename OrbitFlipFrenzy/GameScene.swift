@@ -293,6 +293,12 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private let streakPulseActionKey = "streakPulse"
     private lazy var nearMissTexture: SKTexture? = assets.makeParticleTexture(radius: 6, color: GamePalette.solarGold)
     private lazy var scoreBurstTexture: SKTexture? = assets.makeParticleTexture(radius: 4, color: GamePalette.neonMagenta)
+    private lazy var scoreFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        return formatter
+    }()
 
     private var currentTimeSnapshot: TimeInterval = 0
 
@@ -379,6 +385,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func configureGhost() {
         let ghost = assets.makeGhostNode(radius: 32)
+        ghost.name = "ghost"
         ghost.zPosition = 5
         addChild(ghost)
         ghostNode = ghost
@@ -406,10 +413,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func configureHUD() {
-        scoreStatNode?.removeFromParent()
-        multiplierStatNode?.removeFromParent()
-        levelStatNode?.removeFromParent()
-        powerupStatNode?.removeFromParent()
+        [scoreStatNode, multiplierStatNode, levelStatNode, powerupStatNode].forEach { $0?.removeFromParent() }
         streakBadge?.removeFromParent()
         eventBannerNode?.removeFromParent()
 
@@ -421,37 +425,34 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         streakSubtitleLabel = nil
         eventBannerLabel = nil
 
-        let statWidth = min(size.width * 0.32, 220)
-        let statSize = CGSize(width: statWidth, height: 64)
+        let statSize = CGSize(width: min(size.width * 0.32, 220), height: 64)
+        let statConfigurations: [(title: String, value: String, icon: InterfaceIcon, assign: (SKSpriteNode, SKLabelNode?) -> Void)] = [
+            ("Level", "1", .level, { node, value in
+                self.levelStatNode = node
+                self.levelLabel = value
+            }),
+            ("Score", "0", .trophy, { node, value in
+                self.scoreStatNode = node
+                self.scoreLabel = value
+            }),
+            ("Multiplier", "x1.0", .streak, { node, value in
+                self.multiplierStatNode = node
+                self.multiplierLabel = value
+            })
+        ]
 
-        let levelStat = assets.makeHUDStatNode(title: "Level",
-                                               value: "1",
-                                               size: statSize,
-                                               icon: .level)
-        levelStat.zPosition = 50
-        addChild(levelStat)
-        levelStatNode = levelStat
-        levelLabel = levelStat.childNode(withName: "hud_value") as? SKLabelNode
+        for configuration in statConfigurations {
+            let node = assets.makeHUDStatNode(title: configuration.title,
+                                              value: configuration.value,
+                                              size: statSize,
+                                              icon: configuration.icon)
+            node.zPosition = 50
+            addChild(node)
+            let valueLabel = node.childNode(withName: "hud_value") as? SKLabelNode
+            configuration.assign(node, valueLabel)
+        }
 
-        let scoreStat = assets.makeHUDStatNode(title: "Score",
-                                               value: "0",
-                                               size: statSize,
-                                               icon: .trophy)
-        scoreStat.zPosition = 50
-        addChild(scoreStat)
-        scoreStatNode = scoreStat
-        scoreLabel = scoreStat.childNode(withName: "hud_value") as? SKLabelNode
-
-        let multiplierStat = assets.makeHUDStatNode(title: "Multiplier",
-                                                    value: "x1.0",
-                                                    size: statSize,
-                                                    icon: .streak)
-        multiplierStat.zPosition = 50
-        addChild(multiplierStat)
-        multiplierStatNode = multiplierStat
-        multiplierLabel = multiplierStat.childNode(withName: "hud_value") as? SKLabelNode
-
-        let powerStatSize = CGSize(width: min(size.width * 0.65, 300), height: 60)
+        let powerStatSize = CGSize(width: min(size.width * 0.65, 320), height: 60)
         let powerStat = assets.makeHUDStatNode(title: "Power-Ups",
                                                value: "None",
                                                size: powerStatSize,
@@ -473,32 +474,59 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         streakTitleLabel = streak.childNode(withName: "badge_title") as? SKLabelNode
         streakSubtitleLabel = streak.childNode(withName: "badge_subtitle") as? SKLabelNode
 
-        let banner = assets.makeEventBanner(size: CGSize(width: min(size.width * 0.7, 320), height: 56), icon: .alert)
+        let banner = assets.makeEventBanner(size: CGSize(width: min(size.width * 0.7, 340), height: 56), icon: .alert)
         banner.zPosition = 60
+        banner.alpha = 0
         addChild(banner)
         eventBannerNode = banner
         eventBannerLabel = banner.childNode(withName: "banner_label") as? SKLabelNode
+        eventBannerLabel?.text = ""
 
+        activePowerupTypes.removeAll()
         layoutHUD()
+        updateHUD()
+        updatePowerupHUDIfNeeded()
         updateStreakBadge()
     }
 
     private func layoutHUD() {
         let topY = size.height * 0.42
-        levelStatNode?.position = CGPoint(x: -size.width * 0.35, y: topY)
-        scoreStatNode?.position = CGPoint(x: 0, y: topY)
-        multiplierStatNode?.position = CGPoint(x: size.width * 0.35, y: topY)
-        if let badge = streakBadge {
-            badge.position = CGPoint(x: size.width * 0.35, y: topY - 78)
+        let spacing: CGFloat = 14
+
+        let topStats = [levelStatNode, scoreStatNode, multiplierStatNode].compactMap { $0 }
+        let totalWidth = topStats.reduce(0) { $0 + $1.size.width } + spacing * CGFloat(max(topStats.count - 1, 0))
+        var currentX = -totalWidth / 2
+
+        for node in topStats {
+            let centerX = currentX + node.size.width / 2
+            node.position = CGPoint(x: centerX, y: topY)
+            currentX += node.size.width + spacing
         }
-        powerupStatNode?.position = CGPoint(x: 0, y: -size.height * 0.42)
-        eventBannerNode?.position = CGPoint(x: 0, y: size.height * 0.3)
+
+        if let badge = streakBadge {
+            let rightEdge = topStats.last.map { $0.position.x + $0.size.width / 2 } ?? (badge.size.width / 2)
+            let badgeYOffset = ((topStats.first?.size.height ?? badge.size.height) / 2) + badge.size.height / 2 + 16
+            badge.position = CGPoint(x: rightEdge, y: topY - badgeYOffset)
+        }
+
+        if let powerNode = powerupStatNode {
+            powerNode.position = CGPoint(x: 0, y: -size.height * 0.42)
+        }
+
+        if let banner = eventBannerNode {
+            banner.position = CGPoint(x: 0, y: size.height * 0.32)
+        }
+
         inversionOverlay?.position = .zero
         inversionOverlay?.size = size
     }
 
     private func updateHUD() {
-        scoreLabel?.text = "\(viewModel.score)"
+        if let formatted = scoreFormatter.string(from: NSNumber(value: viewModel.score)) {
+            scoreLabel?.text = formatted
+        } else {
+            scoreLabel?.text = "\(viewModel.score)"
+        }
         let totalMultiplier = Double(viewModel.totalMultiplier())
         multiplierLabel?.text = String(format: "x%.1f", totalMultiplier)
         levelLabel?.text = "\(viewModel.level)"
@@ -641,11 +669,18 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         label.text = text
         banner.removeAllActions()
         banner.alpha = 0
-        banner.run(SKAction.sequence([
-            SKAction.fadeIn(withDuration: 0.2),
-            SKAction.wait(forDuration: 1.8),
-            SKAction.fadeOut(withDuration: 0.3)
-        ]))
+        banner.setScale(0.95)
+        let scaleUp = SKAction.scale(to: 1.05, duration: 0.18)
+        scaleUp.timingMode = .easeOut
+        let settle = SKAction.scale(to: 1.0, duration: 0.2)
+        settle.timingMode = .easeInEaseOut
+        let appear = SKAction.group([
+            SKAction.fadeIn(withDuration: 0.22),
+            SKAction.sequence([scaleUp, settle])
+        ])
+        let hold = SKAction.wait(forDuration: 1.6)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        banner.run(SKAction.sequence([appear, hold, fadeOut]))
     }
 
     private func refreshStreakIfNeeded() {
