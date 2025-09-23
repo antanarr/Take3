@@ -77,6 +77,16 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             currentMultiplier * streakMultiplier
         }
 
+        func currentGems() -> Int { data.gems }
+
+        var shieldPurchaseCost: Int { GameConstants.shieldPowerupGemCost }
+
+        func attemptShieldPurchase() -> Bool {
+            guard data.spendGems(shieldPurchaseCost) else { return false }
+            analytics.track(.gemsSpent(amount: shieldPurchaseCost, reason: "shield_powerup"))
+            return true
+        }
+
         func reset() {
             score = 0
             currentMultiplier = 1.0
@@ -249,8 +259,23 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var backgroundNode: SKSpriteNode?
     private var ringContainers: [RingContainer] = []
     private var playerNode: SKShapeNode!
-    private var ghostNode: SKShapeNode?
+    private var ghostNode: SKNode?
     private var socialProofLabel: SKLabelNode?
+
+    private var scoreStat: HUDStatNode?
+    private var multiplierStat: HUDStatNode?
+    private var levelStat: HUDStatNode?
+    private var powerupStat: HUDStatNode?
+    private var streakBadge: SKSpriteNode?
+    private var streakTitleLabel: SKLabelNode?
+    private var streakDetailLabel: SKLabelNode?
+    private var eventBanner: EventBannerNode?
+    private var shieldAura: SKShapeNode?
+    private var inversionOverlay: SKSpriteNode?
+    private var gemLabel: SKLabelNode?
+    private var shieldPurchaseButton: SKSpriteNode?
+    private var lastKnownGemBalance: Int = 0
+=======
     private var scoreStatNode: SKSpriteNode?
     private var scoreLabel: SKLabelNode?
     private var multiplierStatNode: SKSpriteNode?
@@ -267,6 +292,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var shieldAura: SKShapeNode?
     private var inversionOverlay: SKSpriteNode?
     private var meteorEmitter: SKEmitterNode?
+
 
     private var lastUpdate: TimeInterval = 0
     private var spawnTimer: TimeInterval = 0
@@ -382,8 +408,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func configureGhost() {
-        let ghost = assets.makeGhostNode(radius: 32)
-        ghost.name = "ghost"
+
         ghost.zPosition = 5
         addChild(ghost)
         ghostNode = ghost
@@ -411,6 +436,83 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func configureHUD() {
+
+        scoreStat?.removeFromParent()
+        multiplierStat?.removeFromParent()
+        levelStat?.removeFromParent()
+        powerupStat?.removeFromParent()
+        streakBadge?.removeFromParent()
+        eventBanner?.removeFromParent()
+        gemLabel?.removeFromParent()
+        shieldPurchaseButton?.removeFromParent()
+
+        let statWidth = min(size.width * 0.32, 220)
+        let statSize = CGSize(width: statWidth, height: 58)
+        let powerSize = CGSize(width: min(size.width * 0.42, 260), height: 56)
+
+        let score = assets.makeHUDStatNode(title: "Score",
+                                           value: "0",
+                                           size: statSize,
+                                           icon: .trophy,
+                                           accent: GamePalette.solarGold)
+        score.zPosition = 50
+        addChild(score)
+        scoreStat = score
+
+        let multiplier = assets.makeHUDStatNode(title: "Multiplier",
+                                                value: "x1.0",
+                                                size: statSize,
+                                                icon: .streak,
+                                                accent: GamePalette.cyan)
+        multiplier.zPosition = 50
+        addChild(multiplier)
+        multiplierStat = multiplier
+
+        let level = assets.makeHUDStatNode(title: "Level",
+                                           value: "1",
+                                           size: statSize,
+                                           icon: .timer,
+                                           accent: GamePalette.neonMagenta)
+        level.zPosition = 50
+        addChild(level)
+        levelStat = level
+
+        let power = assets.makeHUDStatNode(title: "Power-ups",
+                                           value: "None",
+                                           size: powerSize,
+                                           icon: .gems,
+                                           accent: GamePalette.cyan)
+        power.zPosition = 50
+        addChild(power)
+        powerupStat = power
+
+        let gems = SKLabelNode(fontNamed: "Orbitron-Bold")
+        gems.fontSize = 18
+        gems.fontColor = GamePalette.cyan
+        gems.horizontalAlignmentMode = .right
+        gems.zPosition = 50
+        gems.text = "Gems: \(viewModel.currentGems())"
+        addChild(gems)
+        gemLabel = gems
+        lastKnownGemBalance = viewModel.currentGems()
+
+        let shieldButton = assets.makeButtonNode(text: "Shield (\(viewModel.shieldPurchaseCost) gems)", size: CGSize(width: 240, height: 58))
+        shieldButton.name = "shield_store"
+        shieldButton.zPosition = 50
+        addChild(shieldButton)
+        shieldPurchaseButton = shieldButton
+        updateShieldStoreState()
+
+        let streak = assets.makeBadgeNode(title: "Daily Streak", subtitle: "Play daily to boost rewards", size: CGSize(width: 220, height: 60), icon: .streak)
+        streak.alpha = 0.5
+        streak.zPosition = 50
+        addChild(streak)
+        streakBadge = streak
+        streakTitleLabel = streak.childNode(withName: "title") as? SKLabelNode
+        streakDetailLabel = streak.childNode(withName: "subtitle") as? SKLabelNode
+
+        let banner = assets.makeEventBanner(size: CGSize(width: min(size.width * 0.65, 340), height: 56))
+=======
         [scoreStatNode, multiplierStatNode, levelStatNode, powerupStatNode].forEach { $0?.removeFromParent() }
         streakBadge?.removeFromParent()
         eventBannerNode?.removeFromParent()
@@ -473,6 +575,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         streakSubtitleLabel = streak.childNode(withName: "badge_subtitle") as? SKLabelNode
 
         let banner = assets.makeEventBanner(size: CGSize(width: min(size.width * 0.7, 340), height: 56), icon: .alert)
+
         banner.zPosition = 60
         banner.alpha = 0
         addChild(banner)
@@ -489,6 +592,22 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func layoutHUD() {
         let topY = size.height * 0.42
+
+        levelStat?.position = CGPoint(x: -size.width * 0.35, y: topY)
+        scoreStat?.position = CGPoint(x: 0, y: topY)
+        if let scoreHeight = scoreStat?.contentSize.height {
+            multiplierStat?.position = CGPoint(x: 0, y: topY - scoreHeight - 14)
+        } else {
+            multiplierStat?.position = CGPoint(x: 0, y: topY - 60)
+        }
+        gemLabel?.position = CGPoint(x: size.width * 0.45, y: topY)
+        if let badge = streakBadge {
+            badge.position = CGPoint(x: size.width * 0.35, y: topY - 60)
+        }
+        powerupStat?.position = CGPoint(x: 0, y: -size.height * 0.45)
+        shieldPurchaseButton?.position = CGPoint(x: size.width * 0.35, y: -size.height * 0.4)
+        eventBanner?.position = CGPoint(x: 0, y: size.height * 0.28)
+
         let spacing: CGFloat = 14
 
         let topStats = [levelStatNode, scoreStatNode, multiplierStatNode].compactMap { $0 }
@@ -515,11 +634,28 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             banner.position = CGPoint(x: 0, y: size.height * 0.32)
         }
 
+
         inversionOverlay?.position = .zero
         inversionOverlay?.size = size
     }
 
     private func updateHUD() {
+        scoreStat?.updateValue("\(viewModel.score)")
+        let totalMultiplier = viewModel.totalMultiplier()
+        multiplierStat?.updateValue(String(format: "x%.1f", totalMultiplier))
+        multiplierStat?.setHighlighted(totalMultiplier > 1.0 || viewModel.isStreakMultiplierActive)
+        let levelChanged = viewModel.level != lastKnownLevel
+        levelStat?.updateValue("\(viewModel.level)")
+        if levelChanged, let node = levelStat {
+            node.setHighlighted(true)
+            node.removeAction(forKey: "levelHighlightDelay")
+            let wait = SKAction.wait(forDuration: 0.6)
+            let reset = SKAction.run { [weak node] in
+                node?.setHighlighted(false)
+            }
+            node.run(SKAction.sequence([wait, reset]), withKey: "levelHighlightDelay")
+        }
+
         if let formatted = scoreFormatter.string(from: NSNumber(value: viewModel.score)) {
             scoreLabel?.text = formatted
         } else {
@@ -528,13 +664,16 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         let totalMultiplier = Double(viewModel.totalMultiplier())
         multiplierLabel?.text = String(format: "x%.1f", totalMultiplier)
         levelLabel?.text = "\(viewModel.level)"
-        updateStreakBadge()
+      updateStreakBadge()
     }
 
     private func updateStreakBadge() {
         guard let badge = streakBadge else { return }
         if viewModel.isStreakMultiplierActive {
             let multiplier = Double(viewModel.streakMultiplier)
+            streakTitleLabel?.text = "Streak Active"
+            streakDetailLabel?.text = String(format: "x%.1f • %dd", multiplier, viewModel.streakDays)
+=======
             streakTitleLabel?.text = String(format: "Streak x%.1f", multiplier)
             streakSubtitleLabel?.text = "\(viewModel.streakDays)d active boost"
             badge.alpha = 1.0
@@ -546,9 +685,14 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
                 badge.run(SKAction.repeatForever(pulse), withKey: streakPulseActionKey)
             }
         } else {
+            streakTitleLabel?.text = "Daily Streak"
+            streakDetailLabel?.text = "Play daily to boost rewards"
+            badge.alpha = 0.5
+=======
             streakTitleLabel?.text = "Build your streak"
             streakSubtitleLabel?.text = "Daily boost inactive"
             badge.alpha = 0.4
+
             badge.removeAction(forKey: streakPulseActionKey)
             badge.setScale(1.0)
         }
@@ -557,6 +701,16 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func updatePowerupHUD() {
         let current = Set(powerups.activeTypes)
         if current.isEmpty {
+
+            powerupStat?.updateValue("None")
+            powerupStat?.setHighlighted(false)
+        } else {
+            let names = current.map { $0.displayName }.sorted()
+            powerupStat?.updateValue(names.joined(separator: ", "))
+            powerupStat?.setHighlighted(true)
+        }
+        updateShieldStoreState()
+=======
 
        
 
@@ -572,6 +726,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
         powerupLabel?.text = "Power-ups: " + descriptions.joined(separator: ", ")
         powerupLabel?.fontColor = highlightLowTime ? GamePalette.solarGold : GamePalette.cyan
+
     }
 
     private func updateShieldAura() {
@@ -601,6 +756,48 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             ]))
             shieldAura = nil
         }
+    }
+
+    private func updateGemBalanceDisplay() {
+        let balance = viewModel.currentGems()
+        if balance != lastKnownGemBalance {
+            lastKnownGemBalance = balance
+            gemLabel?.text = "Gems: \(balance)"
+        }
+    }
+
+    private func updateShieldStoreState() {
+        guard let button = shieldPurchaseButton else { return }
+        let canAfford = viewModel.currentGems() >= viewModel.shieldPurchaseCost
+        let shieldActive = powerups.isActive(.shield, currentTime: currentTimeSnapshot)
+        let enabled = !isGameOver && canAfford && !shieldActive
+        button.alpha = enabled ? 1.0 : 0.4
+        if let label = button.childNode(withName: "label") as? SKLabelNode {
+            label.text = "Shield (\(viewModel.shieldPurchaseCost) gems)"
+        }
+    }
+
+    private func attemptShieldPurchase() {
+        guard !isGameOver else { return }
+        if powerups.isActive(.shield, currentTime: currentTimeSnapshot) {
+            showEventBanner("Shield already active", accent: GamePalette.cyan)
+            return
+        }
+        if viewModel.attemptShieldPurchase() {
+            updateGemBalanceDisplay()
+            powerups.activate(.shield(duration: GameConstants.shieldPowerupDuration), currentTime: currentTimeSnapshot)
+            updateShieldAura()
+            updatePowerupHUDIfNeeded()
+            showEventBanner("Shield activated!", accent: GamePalette.cyan)
+        } else {
+            showEventBanner("Not enough gems for shield", accent: .systemRed)
+        }
+        updateShieldStoreState()
+    }
+
+    private func nodesContainShieldButton(_ nodes: [SKNode]) -> Bool {
+        guard let button = shieldPurchaseButton else { return false }
+        return nodes.contains(where: { $0 == button || ($0.name == "label" && $0.parent == button) })
     }
 
     private func emitNearMiss(at position: CGPoint) {
@@ -668,6 +865,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
+
     private func showEventBanner(_ text: String) {
         guard let banner = eventBannerNode, let label = eventBannerLabel else { return }
         label.text = text
@@ -685,6 +883,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         let hold = SKAction.wait(forDuration: 1.6)
         let fadeOut = SKAction.fadeOut(withDuration: 0.3)
         banner.run(SKAction.sequence([appear, hold, fadeOut]))
+
     }
 
     private func refreshStreakIfNeeded() {
@@ -700,6 +899,12 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Touch Handling
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let location = touches.first?.location(in: self) else { return }
+        let touchedNodes = nodes(at: location)
+        if nodesContainShieldButton(touchedNodes) {
+            shieldPurchaseButton?.setPressed(true)
+            return
+        }
         guard !isGameOver else { return }
         touchBeganTime = currentTimeSnapshot
         doubleFlipArmed = false
@@ -714,6 +919,13 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let location = touches.first?.location(in: self) else { return }
+        shieldPurchaseButton?.setPressed(false)
+        let touchedNodes = nodes(at: location)
+        if nodesContainShieldButton(touchedNodes) {
+            attemptShieldPurchase()
+            return
+        }
         guard !isGameOver else { return }
         defer { touchBeganTime = nil }
         let now = currentTimeSnapshot
@@ -725,6 +937,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        shieldPurchaseButton?.setPressed(false)
         guard !isGameOver else { return }
         touchBeganTime = nil
         doubleFlipArmed = false
@@ -799,6 +1012,8 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         updatePowerupHUD()
         refreshStreakIfNeeded()
         handleSpecialEvents()
+        updateGemBalanceDisplay()
+        updateShieldStoreState()
     }
 
     private func updateRings(delta: TimeInterval) {
@@ -1102,8 +1317,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
                 self.inversionEnds = 0
             }
         ]))
-        playEventCelebration()
-        showEventBanner("Color inversion!")
+
     }
 
     private func triggerMeteorShower() {
@@ -1114,16 +1328,10 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             if let meteor = spawnObstacle(at: currentTimeSnapshot, colorOverride: rainbow) {
                 attachMeteorTrail(to: meteor, color: rainbow)
             }
-        }
-        playEventCelebration()
-        showEventBanner("Rainbow meteor shower!")
-    }
+       
 
     private func triggerGravityReversal() {
         gravityEnds = currentTimeSnapshot + GameConstants.gravityReversalDuration
-        playEventCelebration()
-        showEventBanner("Gravity reversed!")
-    }
 
     private func playEventCelebration() {
         sound.play(.milestone)
@@ -1212,6 +1420,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func endGame() {
         guard !isGameOver else { return }
         isGameOver = true
+        updateShieldStoreState()
         viewModel.registerCollision()
         viewModel.finalizeScore()
         shieldAura?.removeAllActions()
