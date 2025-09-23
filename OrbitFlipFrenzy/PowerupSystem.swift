@@ -43,6 +43,7 @@ private struct ActivePowerup {
 public protocol PowerupManaging {
     func activate(_ powerUp: PowerUp, currentTime: TimeInterval)
     func isActive(_ type: PowerUpType, currentTime: TimeInterval) -> Bool
+    func currentPowerUp(of type: PowerUpType) -> PowerUp?
     func update(currentTime: TimeInterval)
     var activeTypes: [PowerUpType] { get }
 }
@@ -81,5 +82,30 @@ public final class PowerupManager: PowerupManaging {
 
     public func currentPowerUp(of type: PowerUpType) -> PowerUp? {
         active.first { $0.type.type == type }?.type
+    }
+}
+
+public extension PowerUpType {
+    var displayName: String {
+        switch self {
+        case .shield:
+            return "Shield"
+        case .slowMo:
+            return "Slow-Mo"
+        case .magnet:
+            return "Magnet"
+        }
+    }
+}
+
+public extension PowerUp {
+    var slowFactor: CGFloat? {
+        if case let .slowMo(factor, _) = self { return factor }
+        return nil
+    }
+
+    var magnetStrength: CGFloat? {
+        if case let .magnet(strength, _) = self { return strength }
+        return nil
     }
 }
