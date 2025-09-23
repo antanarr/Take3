@@ -295,26 +295,31 @@ public final class MenuScene: SKScene {
         let background = assets.makeBackground(size: view.bounds.size)
         addChild(background)
 
-        let title = SKLabelNode(text: "Orbit Flip Frenzy")
-        title.fontName = "Orbitron-Bold"
-        title.fontSize = 42
-        title.fontColor = GamePalette.solarGold
-        title.position = CGPoint(x: 0, y: view.bounds.height * 0.2)
-        title.alpha = 0
-        title.run(SKAction.fadeIn(withDuration: 1.0))
-        addChild(title)
+        let heroWidth = min(view.bounds.width * 0.7, 320)
+        let logo = assets.makeLogoNode(size: CGSize(width: heroWidth, height: heroWidth * 0.42))
+        logo.position = CGPoint(x: 0, y: view.bounds.height * 0.3)
+        logo.alpha = 0
+        logo.run(SKAction.fadeIn(withDuration: 0.8))
+        addChild(logo)
 
-        let subtitle = SKLabelNode(text: "Flip faster, dodge harder, own the orbit.")
-        subtitle.fontName = "SFProRounded-Bold"
-        subtitle.fontSize = 16
-        subtitle.fontColor = GamePalette.cyan
-        subtitle.position = CGPoint(x: 0, y: title.position.y - 60)
-        subtitle.alpha = 0
-        subtitle.run(SKAction.sequence([SKAction.wait(forDuration: 0.3), SKAction.fadeIn(withDuration: 0.8)]))
-        addChild(subtitle)
+        let iconSprite = SKSpriteNode(texture: SKTexture(image: assets.makeAppIconImage(size: CGSize(width: 160, height: 160))))
+        iconSprite.size = CGSize(width: 110, height: 110)
+        iconSprite.position = CGPoint(x: -heroWidth * 0.58, y: logo.position.y)
+        iconSprite.alpha = 0
+        iconSprite.run(SKAction.sequence([SKAction.wait(forDuration: 0.2), SKAction.fadeIn(withDuration: 0.6)]))
+        addChild(iconSprite)
+
+        let tagline = SKLabelNode(text: "Flip faster. Dodge harder. Own the orbit.")
+        tagline.fontName = "SFProRounded-Bold"
+        tagline.fontSize = 18
+        tagline.fontColor = GamePalette.cyan
+        tagline.position = CGPoint(x: 0, y: logo.position.y - heroWidth * 0.36)
+        tagline.alpha = 0
+        tagline.run(SKAction.sequence([SKAction.wait(forDuration: 0.35), SKAction.fadeIn(withDuration: 0.7)]))
+        addChild(tagline)
 
         let start = viewModel.createButton(title: "Tap to Launch", size: CGSize(width: 240, height: 80))
-        start.position = CGPoint(x: 0, y: -20)
+        start.position = CGPoint(x: 0, y: tagline.position.y - 90)
         start.name = "start"
         start.alpha = 0
         start.run(SKAction.sequence([SKAction.wait(forDuration: 0.6), SKAction.fadeIn(withDuration: 0.6)]))
@@ -332,7 +337,7 @@ public final class MenuScene: SKScene {
         streakNode.fontName = "SFProRounded-Bold"
         streakNode.fontColor = .white
         streakNode.fontSize = 18
-        streakNode.position = CGPoint(x: 0, y: -view.bounds.height * 0.2)
+        streakNode.position = CGPoint(x: 0, y: start.position.y - 120)
         addChild(streakNode)
         streakLabel = streakNode
 
@@ -340,7 +345,7 @@ public final class MenuScene: SKScene {
         multiplier.fontName = "SFProRounded-Regular"
         multiplier.fontColor = UIColor.white.withAlphaComponent(0.75)
         multiplier.fontSize = 14
-        multiplier.position = CGPoint(x: 0, y: streakNode.position.y - 28)
+        multiplier.position = CGPoint(x: 0, y: streakNode.position.y - 34)
         addChild(multiplier)
         multiplierCountdownLabel = multiplier
 
@@ -356,7 +361,7 @@ public final class MenuScene: SKScene {
         gems.fontSize = 18
         gems.fontColor = GamePalette.cyan
         gems.horizontalAlignmentMode = .right
-        gems.position = CGPoint(x: view.bounds.width * 0.45, y: view.bounds.height * 0.32)
+        gems.position = CGPoint(x: view.bounds.width * 0.45, y: logo.position.y + heroWidth * 0.32)
         addChild(gems)
         gemBalanceLabel = gems
         lastGemBalance = viewModel.currentGemBalance()
@@ -366,7 +371,7 @@ public final class MenuScene: SKScene {
         starterLabel.fontName = "SFProRounded-Bold"
         starterLabel.fontSize = 16
         starterLabel.fontColor = starterStatus.highlight ? GamePalette.solarGold : UIColor.white.withAlphaComponent(0.7)
-        starterLabel.position = CGPoint(x: 0, y: bestLabel.position.y - 50)
+        starterLabel.position = CGPoint(x: 0, y: bestLabel.position.y - 46)
         addChild(starterLabel)
         starterPackStatusLabel = starterLabel
 

@@ -139,54 +139,72 @@ public final class GameOverScene: SKScene {
         viewModel.playCollisionFeedback()
         viewModel.preloadRewarded()
 
-        let title = SKLabelNode(text: "Don't lose your streak!")
-        title.fontName = "Orbitron-Bold"
-        title.fontSize = 28
-        title.fontColor = GamePalette.solarGold
-        title.position = CGPoint(x: 0, y: view.bounds.height * 0.2)
-        addChild(title)
+        let logoWidth = min(view.bounds.width * 0.65, 300)
+        let logo = assets.makeLogoNode(size: CGSize(width: logoWidth, height: logoWidth * 0.4))
+        logo.position = CGPoint(x: 0, y: view.bounds.height * 0.24)
+        logo.alpha = 0
+        logo.run(SKAction.fadeIn(withDuration: 0.8))
+        addChild(logo)
+
+        let iconSprite = SKSpriteNode(texture: SKTexture(image: assets.makeAppIconImage(size: CGSize(width: 140, height: 140))))
+        iconSprite.size = CGSize(width: 96, height: 96)
+        iconSprite.position = CGPoint(x: -logoWidth * 0.55, y: logo.position.y)
+        iconSprite.alpha = 0
+        iconSprite.run(SKAction.sequence([SKAction.wait(forDuration: 0.2), SKAction.fadeIn(withDuration: 0.7)]))
+        addChild(iconSprite)
+
+        let headline = SKLabelNode(text: "Don't lose your streak!")
+        headline.fontName = "Orbitron-Bold"
+        headline.fontSize = 26
+        headline.fontColor = GamePalette.solarGold
+        headline.position = CGPoint(x: 0, y: logo.position.y - logoWidth * 0.35)
+        headline.alpha = 0
+        headline.run(SKAction.sequence([SKAction.wait(forDuration: 0.3), SKAction.fadeIn(withDuration: 0.6)]))
+        addChild(headline)
 
         let gemLabel = SKLabelNode(fontNamed: "Orbitron-Bold")
         gemLabel.fontSize = 18
         gemLabel.fontColor = GamePalette.cyan
         gemLabel.horizontalAlignmentMode = .right
-        gemLabel.position = CGPoint(x: view.bounds.width * 0.35, y: title.position.y)
+        gemLabel.position = CGPoint(x: view.bounds.width * 0.42, y: logo.position.y + logo.size.height * 0.45)
         gemLabel.text = "Gems: \(viewModel.currentGemBalance())"
+        gemLabel.alpha = 0
+        gemLabel.run(SKAction.sequence([SKAction.wait(forDuration: 0.4), SKAction.fadeIn(withDuration: 0.6)]))
         addChild(gemLabel)
         gemBalanceLabel = gemLabel
         lastGemBalance = viewModel.currentGemBalance()
 
-        let scoreNode = SKLabelNode(text: "Score \(result.score)")
-        scoreNode.fontName = "Orbitron-Bold"
-        scoreNode.fontSize = 40
-        scoreNode.fontColor = .white
-        scoreNode.position = CGPoint(x: 0, y: title.position.y - 80)
-        addChild(scoreNode)
+        let badgeSize = CGSize(width: min(view.bounds.width * 0.82, 320), height: 78)
+        let statsBadge = assets.makeBadgeNode(title: "Score \(result.score)",
+                                              subtitle: "Near-misses \(result.nearMisses) • Time \(String(format: "%.1fs", result.duration))",
+                                              size: badgeSize,
+                                              icon: .trophy)
+        statsBadge.position = CGPoint(x: 0, y: headline.position.y - 80)
+        statsBadge.alpha = 0
+        statsBadge.run(SKAction.sequence([SKAction.wait(forDuration: 0.45), SKAction.fadeIn(withDuration: 0.6)]))
+        addChild(statsBadge)
 
-        let statsNode = SKLabelNode(text: "Near-misses: \(result.nearMisses) • Time: \(String(format: "%.1fs", result.duration))")
-        statsNode.fontName = "SFProRounded-Bold"
-        statsNode.fontColor = GamePalette.cyan
-        statsNode.fontSize = 18
-        statsNode.position = CGPoint(x: 0, y: scoreNode.position.y - 40)
-        addChild(statsNode)
-
+        var nextAnchor = statsBadge.position.y - badgeSize.height * 0.6
         let eventsText = result.triggeredEvents.sorted().map { "#\($0)" }.joined(separator: " ")
         if !eventsText.isEmpty {
             let eventsLabel = SKLabelNode(text: "Moments unlocked: \(eventsText)")
             eventsLabel.fontName = "SFProRounded-Bold"
             eventsLabel.fontColor = GamePalette.neonMagenta
             eventsLabel.fontSize = 16
-            eventsLabel.position = CGPoint(x: 0, y: statsNode.position.y - 40)
+            eventsLabel.position = CGPoint(x: 0, y: statsBadge.position.y - badgeSize.height * 0.7)
             addChild(eventsLabel)
+            nextAnchor = eventsLabel.position.y - 50
         }
 
+        let buttonAnchor = nextAnchor - 20
+
         shareButton = viewModel.makeButton(title: "Share Highlight", size: CGSize(width: 220, height: 60))
-        shareButton?.position = CGPoint(x: 0, y: -20)
+        shareButton?.position = CGPoint(x: 0, y: buttonAnchor)
         shareButton?.name = "share"
         if let shareButton { addChild(shareButton) }
 
         continueButton = viewModel.makeButton(title: "Watch to Continue", size: CGSize(width: 240, height: 60))
-        continueButton?.position = CGPoint(x: 0, y: shareButton?.position.y ?? -20 - 80)
+        continueButton?.position = CGPoint(x: 0, y: (shareButton?.position.y ?? buttonAnchor) - 80)
         continueButton?.name = "continue"
         if let continueButton { addChild(continueButton) }
 
