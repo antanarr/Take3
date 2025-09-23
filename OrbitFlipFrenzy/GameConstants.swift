@@ -36,6 +36,11 @@ public struct GameConstants {
     public static let gravityReversalDuration: TimeInterval = 8.0
     public static let magnetSafeZoneRadius: CGFloat = 24.0
     public static let adReadinessPollInterval: TimeInterval = 0.5
+    public static let reviveGemCost: Int = 150
+    public static let shieldPowerupGemCost: Int = 120
+    public static let starterPackGemGrant: Int = 200
+    public static let starterPackSkinIdentifier: String = "nova_pod"
+    public static let shieldPowerupDuration: TimeInterval = powerupShieldDuration
 }
 
 public enum GamePalette {
