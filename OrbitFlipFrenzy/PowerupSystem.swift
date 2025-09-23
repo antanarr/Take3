@@ -47,6 +47,7 @@ public protocol PowerupManaging {
     func update(currentTime: TimeInterval)
     func timeRemaining(for type: PowerUpType, currentTime: TimeInterval) -> TimeInterval?
     var activeTypes: [PowerUpType] { get }
+    func reset()
 }
 
 public final class PowerupManager: PowerupManaging {
@@ -88,6 +89,10 @@ public final class PowerupManager: PowerupManaging {
 
     public func currentPowerUp(of type: PowerUpType) -> PowerUp? {
         active.first { $0.type.type == type }?.type
+    }
+
+    public func reset() {
+        active.removeAll(keepingCapacity: false)
     }
 }
 
