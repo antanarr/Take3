@@ -30,6 +30,10 @@ public protocol AssetGenerating {
     func makePowerUpNode(of type: PowerUpType) -> SKShapeNode
 
     func makeButtonNode(text: String, size: CGSize) -> SKSpriteNode
+
+    func makeMonetizationButton(title: String, subtitle: String, icon: String) -> SKSpriteNode
+    func makeGemIcon(radius: CGFloat) -> SKShapeNode
+
     func makeBadgeNode(title: String, subtitle: String, size: CGSize, icon: BadgeIcon?) -> SKSpriteNode
     func makeLogoNode(size: CGSize) -> SKSpriteNode
     func makeAppIconImage(size: CGSize) -> UIImage
@@ -37,7 +41,6 @@ public protocol AssetGenerating {
     func makeHUDStatNode(title: String, value: String, size: CGSize, icon: BadgeIcon?, accent: UIColor) -> HUDStatNode
     func makeEventBanner(size: CGSize) -> EventBannerNode
     func makeGhostNode(size: CGSize) -> SKNode
-=======
     func makeButtonNode(text: String, size: CGSize, icon: InterfaceIcon?) -> SKSpriteNode
     func makeParticleTexture(radius: CGFloat, color: UIColor) -> SKTexture
     func makeLogoNode(size: CGSize) -> SKSpriteNode
@@ -202,6 +205,77 @@ public final class AssetGenerator: AssetGenerating {
         return node
     }
 
+    public func makeMonetizationButton(title: String, subtitle: String, icon: String) -> SKSpriteNode {
+        let size = CGSize(width: 220, height: 70)
+        let baseTexture = gradientTexture(size: size, colors: [GamePalette.solarGold, GamePalette.neonMagenta])
+        let pressedTexture = gradientTexture(size: size, colors: [GamePalette.neonMagenta, GamePalette.royalBlue])
+        let node = SKSpriteNode(texture: baseTexture)
+        node.size = size
+        node.name = "monetizationButton"
+        node.userData = ["pressedTexture": pressedTexture, "originalTexture": baseTexture]
+
+        let iconNode = SKLabelNode(fontNamed: "SFProRounded-Bold")
+        iconNode.text = icon
+        iconNode.fontSize = 30
+        iconNode.fontColor = .white
+        iconNode.verticalAlignmentMode = .center
+        iconNode.horizontalAlignmentMode = .center
+        iconNode.position = CGPoint(x: -size.width * 0.35, y: 0)
+        iconNode.name = "icon"
+        node.addChild(iconNode)
+
+        let titleLabel = SKLabelNode(fontNamed: "Orbitron-Bold")
+        titleLabel.text = title
+        titleLabel.fontSize = 18
+        titleLabel.fontColor = .white
+        titleLabel.verticalAlignmentMode = .center
+        titleLabel.horizontalAlignmentMode = .left
+        titleLabel.position = CGPoint(x: -size.width * 0.15, y: 12)
+        titleLabel.name = "title"
+        node.addChild(titleLabel)
+
+        let subtitleLabel = SKLabelNode(fontNamed: "SFProRounded-Regular")
+        subtitleLabel.text = subtitle
+        subtitleLabel.fontSize = 12
+        subtitleLabel.fontColor = UIColor.white.withAlphaComponent(0.85)
+        subtitleLabel.verticalAlignmentMode = .center
+        subtitleLabel.horizontalAlignmentMode = .left
+        subtitleLabel.position = CGPoint(x: -size.width * 0.15, y: -14)
+        subtitleLabel.name = "subtitle"
+        node.addChild(subtitleLabel)
+
+        let frame = SKShapeNode(rectOf: CGSize(width: size.width - 6, height: size.height - 6), cornerRadius: 28)
+        frame.lineWidth = 2
+        frame.strokeColor = UIColor.white.withAlphaComponent(0.35)
+        frame.fillColor = .clear
+        frame.zPosition = -1
+        node.addChild(frame)
+
+        return node
+    }
+
+    public func makeGemIcon(radius: CGFloat) -> SKShapeNode {
+        let path = UIBezierPath()
+        let width = radius * 1.2
+        path.move(to: CGPoint(x: 0, y: radius))
+        path.addLine(to: CGPoint(x: width, y: 0.0))
+        path.addLine(to: CGPoint(x: 0, y: -radius))
+        path.addLine(to: CGPoint(x: -width, y: 0.0))
+        path.close()
+        let node = SKShapeNode(path: path.cgPath)
+        node.fillColor = GamePalette.solarGold
+        node.strokeColor = UIColor.white.withAlphaComponent(0.9)
+        node.lineWidth = 2
+        node.glowWidth = 4
+
+        let facet = SKShapeNode(rectOf: CGSize(width: width * 1.2, height: radius * 0.4), cornerRadius: radius * 0.15)
+        facet.fillColor = UIColor.white.withAlphaComponent(0.35)
+        facet.strokeColor = UIColor.white.withAlphaComponent(0.0)
+        facet.position = CGPoint(x: 0, y: radius * 0.25)
+        facet.zPosition = 1
+        node.addChild(facet)
+
+        return node
     public func makeBadgeNode(title: String, subtitle: String, size: CGSize, icon: BadgeIcon?) -> SKSpriteNode {
         let badge = SKSpriteNode(color: .clear, size: size)
         badge.anchorPoint = CGPoint(x: 0.5, y: 0.5)

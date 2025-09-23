@@ -14,6 +14,33 @@ public protocol AdManaging: AnyObject {
 }
 
 public final class AdManager: AdManaging {
+
+    private var lastShown: Date?
+    private var rewardedReady = false
+    private var reloadTask: DispatchWorkItem?
+    private let warmupDelay: TimeInterval = 2.0
+
+    public init() {
+        scheduleRewardedReload()
+    }
+
+    public var isRewardedReady: Bool {
+        rewardedReady
+    }
+
+    public func showRewardedAd(from viewController: UIViewController, completion: @escaping () -> Void) {
+        guard rewardedReady else { return }
+
+        rewardedReady = false
+        reloadTask?.cancel()
+        lastShown = Date()
+
+        let alert = UIAlertController(title: "Rewarded Ad", message: "Watching...", preferredStyle: .alert)
+        viewController.present(alert, animated: true)
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        alert.view.addSubview(spinner)
+
     public enum AdError: Error, CustomStringConvertible {
         case notReady
         case cancelled
@@ -262,6 +289,7 @@ private final class SimulatedRewardedViewController: UIViewController {
         container.addSubview(timerLabel)
         container.addSubview(cancelButton)
 
+
         NSLayoutConstraint.activate([
             container.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             container.centerYAnchor.constraint(equalTo: view.centerYAnchor),
@@ -284,6 +312,13 @@ private final class SimulatedRewardedViewController: UIViewController {
             cancelButton.centerXAnchor.constraint(equalTo: container.centerXAnchor)
         ])
 
+        spinner.startAnimating()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            alert.dismiss(animated: true) {
+                self?.scheduleRewardedReload()
+                completion()
+
+
         startCountdown(label: timerLabel)
     }
 
@@ -301,10 +336,22 @@ private final class SimulatedRewardedViewController: UIViewController {
                 timer.invalidate()
                 self.completion(.success(()))
                 self.dismiss(animated: true)
+
             }
             label?.text = self.formattedTime()
         }
     }
+
+
+    private func scheduleRewardedReload() {
+        reloadTask?.cancel()
+        rewardedReady = false
+        let task = DispatchWorkItem { [weak self] in
+            self?.rewardedReady = true
+            self?.reloadTask = nil
+        }
+        reloadTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + warmupDelay, execute: task)
 
     private func formattedTime() -> String {
         String(format: "00:%02d", Int(max(0, remainingTime)))
@@ -314,5 +361,6 @@ private final class SimulatedRewardedViewController: UIViewController {
         timer?.invalidate()
         completion(.failure(AdManager.AdError.cancelled))
         dismiss(animated: true)
+
     }
 }
