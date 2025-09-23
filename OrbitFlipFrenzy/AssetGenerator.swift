@@ -20,6 +20,9 @@ public protocol AssetGenerating {
     func makeLogoNode(size: CGSize) -> SKSpriteNode
     func makeAppIconImage(size: CGSize) -> UIImage
     func makeParticleTexture(radius: CGFloat, color: UIColor) -> SKTexture
+    func makeHUDStatNode(title: String, value: String, size: CGSize, icon: BadgeIcon?, accent: UIColor) -> HUDStatNode
+    func makeEventBanner(size: CGSize) -> EventBannerNode
+    func makeGhostNode(size: CGSize) -> SKNode
 }
 
 public final class AssetGenerator: AssetGenerating {
@@ -187,6 +190,7 @@ public final class AssetGenerator: AssetGenerating {
         titleLabel.horizontalAlignmentMode = .left
         titleLabel.verticalAlignmentMode = .center
         titleLabel.text = title
+        titleLabel.name = "title"
 
         let subtitleLabel = SKLabelNode(fontNamed: "SFProRounded-Regular")
         subtitleLabel.fontSize = min(15, size.height * 0.22)
@@ -194,6 +198,7 @@ public final class AssetGenerator: AssetGenerating {
         subtitleLabel.horizontalAlignmentMode = .left
         subtitleLabel.verticalAlignmentMode = .center
         subtitleLabel.text = subtitle
+        subtitleLabel.name = "subtitle"
 
         let inset = size.width * 0.12
         var titleX = -size.width * 0.5 + inset
@@ -212,6 +217,63 @@ public final class AssetGenerator: AssetGenerating {
         badge.addChild(subtitleLabel)
 
         return badge
+    }
+
+    public func makeHUDStatNode(title: String,
+                                value: String,
+                                size: CGSize,
+                                icon: BadgeIcon?,
+                                accent: UIColor) -> HUDStatNode {
+        let texture = gradientTexture(size: size, colors: [GamePalette.deepNavy.withAlphaComponent(0.85), GamePalette.royalBlue])
+        let iconNode = icon.map { makeBadgeIconNode(icon: $0, diameter: size.height * 0.58) }
+        return HUDStatNode(size: size,
+                           backgroundTexture: texture,
+                           title: title,
+                           value: value,
+                           icon: iconNode,
+                           accentColor: accent)
+    }
+
+    public func makeEventBanner(size: CGSize) -> EventBannerNode {
+        let texture = gradientTexture(size: size, colors: [GamePalette.deepNavy.withAlphaComponent(0.8), GamePalette.royalBlue])
+        return EventBannerNode(size: size, backgroundTexture: texture)
+    }
+
+    public func makeGhostNode(size: CGSize) -> SKNode {
+        let radius = min(size.width, size.height) / 2
+        let container = SKNode()
+        container.name = "ghost"
+
+        let outer = SKShapeNode(circleOfRadius: radius)
+        outer.fillColor = GamePalette.solarGold.withAlphaComponent(0.16)
+        outer.strokeColor = GamePalette.solarGold
+        outer.lineWidth = 2
+        outer.glowWidth = 6
+        outer.alpha = 0.4
+        container.addChild(outer)
+
+        let inner = SKShapeNode(circleOfRadius: radius * 0.55)
+        inner.fillColor = GamePalette.neonMagenta.withAlphaComponent(0.25)
+        inner.strokeColor = GamePalette.cyan
+        inner.lineWidth = 1.5
+        inner.alpha = 0.6
+        container.addChild(inner)
+
+        let trail = SKEmitterNode()
+        trail.particleTexture = makeParticleTexture(radius: 4, color: GamePalette.solarGold) ?? SKTexture()
+        trail.particleBirthRate = 36
+        trail.particleLifetime = 1.1
+        trail.particleLifetimeRange = 0.3
+        trail.particleAlpha = 0.6
+        trail.particleAlphaSpeed = -0.9
+        trail.particleSpeed = 18
+        trail.particleSpeedRange = 8
+        trail.particlePositionRange = CGVector(dx: radius * 0.4, dy: radius * 0.4)
+        trail.emissionAngleRange = .pi * 2
+        trail.zPosition = -1
+        container.addChild(trail)
+
+        return container
     }
 
     public func makeLogoNode(size: CGSize) -> SKSpriteNode {
@@ -348,6 +410,198 @@ public final class AssetGenerator: AssetGenerating {
         context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: size.height), options: [])
         guard let image = context.makeImage() else { return SKTexture() }
         return SKTexture(cgImage: image)
+    }
+}
+
+public final class HUDStatNode: SKNode {
+    public let contentSize: CGSize
+
+    private let background: SKSpriteNode
+    private let highlightNode: SKShapeNode
+    private let border: SKShapeNode
+    private let valueLabel: SKLabelNode
+    private var accentColor: UIColor
+    private var isHighlightedState = false
+
+    init(size: CGSize,
+         backgroundTexture: SKTexture?,
+         title: String,
+         value: String,
+         icon: SKNode?,
+         accentColor: UIColor) {
+        self.contentSize = size
+        self.accentColor = accentColor
+
+        if let texture = backgroundTexture {
+            background = SKSpriteNode(texture: texture)
+        } else {
+            background = SKSpriteNode(color: GamePalette.deepNavy.withAlphaComponent(0.85), size: size)
+        }
+        background.size = size
+        background.alpha = 0.9
+        background.zPosition = -2
+
+        let highlight = SKShapeNode(rectOf: size, cornerRadius: size.height * 0.45)
+        highlight.fillColor = accentColor.withAlphaComponent(0.22)
+        highlight.strokeColor = .clear
+        highlight.alpha = 0
+        highlight.zPosition = -1
+        highlightNode = highlight
+
+        border = SKShapeNode(rectOf: size, cornerRadius: size.height * 0.45)
+        border.strokeColor = accentColor.withAlphaComponent(0.8)
+        border.lineWidth = 2
+        border.fillColor = UIColor.clear
+        border.zPosition = 0
+
+        let padding = size.width * 0.12
+        var textX = -size.width / 2 + padding
+
+        super.init()
+
+        addChild(background)
+        addChild(highlightNode)
+        addChild(border)
+
+        if let icon {
+            let iconFrame = icon.calculateAccumulatedFrame()
+            let iconWidth = iconFrame.width
+            icon.zPosition = 1
+            icon.position = CGPoint(x: textX + iconWidth / 2, y: 0)
+            addChild(icon)
+            textX = icon.position.x + iconWidth / 2 + padding * 0.4
+        }
+
+        let titleLabel = SKLabelNode(fontNamed: "SFProRounded-Regular")
+        titleLabel.fontSize = min(14, size.height * 0.26)
+        titleLabel.fontColor = UIColor.white.withAlphaComponent(0.7)
+        titleLabel.horizontalAlignmentMode = .left
+        titleLabel.verticalAlignmentMode = .center
+        titleLabel.text = title.uppercased()
+        titleLabel.position = CGPoint(x: textX, y: size.height * 0.18)
+        titleLabel.zPosition = 1
+        addChild(titleLabel)
+
+        let valueNode = SKLabelNode(fontNamed: "Orbitron-Bold")
+        valueNode.fontSize = min(26, size.height * 0.5)
+        valueNode.fontColor = .white
+        valueNode.horizontalAlignmentMode = .left
+        valueNode.verticalAlignmentMode = .center
+        valueNode.text = value
+        valueNode.position = CGPoint(x: textX, y: -size.height * 0.18)
+        valueNode.zPosition = 1
+        addChild(valueNode)
+        valueLabel = valueNode
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    public func updateValue(_ text: String) {
+        valueLabel.text = text
+    }
+
+    public func setAccentColor(_ color: UIColor) {
+        accentColor = color
+        border.strokeColor = color.withAlphaComponent(0.85)
+        highlightNode.fillColor = color.withAlphaComponent(0.22)
+    }
+
+    public func setHighlighted(_ highlighted: Bool) {
+        guard highlighted != isHighlightedState else { return }
+        isHighlightedState = highlighted
+        let target = highlighted ? CGFloat(1.0) : 0.0
+        highlightNode.removeAllActions()
+        highlightNode.run(SKAction.fadeAlpha(to: target, duration: 0.2))
+        valueLabel.fontColor = highlighted ? accentColor : .white
+        if highlighted && action(forKey: "hudHighlightPulse") == nil {
+            let pulse = SKAction.sequence([
+                SKAction.scale(to: 1.02, duration: 0.35),
+                SKAction.scale(to: 1.0, duration: 0.35)
+            ])
+            run(SKAction.repeatForever(pulse), withKey: "hudHighlightPulse")
+        } else if !highlighted {
+            removeAction(forKey: "hudHighlightPulse")
+            run(SKAction.scale(to: 1.0, duration: 0.2))
+        }
+    }
+}
+
+public final class EventBannerNode: SKNode {
+    private let background: SKSpriteNode
+    private let border: SKShapeNode
+    private let accentBar: SKShapeNode
+    private let glowNode: SKShapeNode
+    private let label: SKLabelNode
+
+    init(size: CGSize, backgroundTexture: SKTexture?) {
+        if let texture = backgroundTexture {
+            background = SKSpriteNode(texture: texture)
+        } else {
+            background = SKSpriteNode(color: GamePalette.deepNavy.withAlphaComponent(0.9), size: size)
+        }
+        background.size = size
+        background.alpha = 0.9
+        background.zPosition = -2
+
+        glowNode = SKShapeNode(rectOf: size, cornerRadius: size.height * 0.48)
+        glowNode.fillColor = GamePalette.solarGold.withAlphaComponent(0.22)
+        glowNode.strokeColor = .clear
+        glowNode.alpha = 0
+        glowNode.zPosition = -1
+
+        border = SKShapeNode(rectOf: size, cornerRadius: size.height * 0.48)
+        border.lineWidth = 2
+        border.strokeColor = GamePalette.solarGold
+        border.fillColor = UIColor.clear
+        border.zPosition = 0
+
+        let accentWidth = max(6, size.width * 0.06)
+        accentBar = SKShapeNode(rectOf: CGSize(width: accentWidth, height: size.height * 0.7), cornerRadius: accentWidth / 2)
+        accentBar.fillColor = GamePalette.solarGold
+        accentBar.strokeColor = .clear
+        accentBar.position = CGPoint(x: -size.width * 0.42, y: 0)
+        accentBar.zPosition = 1
+
+        label = SKLabelNode(fontNamed: "Orbitron-Bold")
+        label.fontSize = min(22, size.height * 0.46)
+        label.fontColor = .white
+        label.verticalAlignmentMode = .center
+        label.horizontalAlignmentMode = .center
+        label.zPosition = 2
+
+        super.init()
+
+        addChild(background)
+        addChild(glowNode)
+        addChild(border)
+        addChild(accentBar)
+        addChild(label)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    public func present(message: String, accent: UIColor) {
+        label.text = message
+        accentBar.fillColor = accent
+        border.strokeColor = accent
+        glowNode.removeAllActions()
+        glowNode.fillColor = accent.withAlphaComponent(0.28)
+        glowNode.alpha = 1
+        let glowFade = SKAction.fadeAlpha(to: 0, duration: 0.6)
+        glowFade.timingMode = .easeOut
+        glowNode.run(glowFade)
+
+        removeAllActions()
+        alpha = 0
+        run(SKAction.sequence([
+            SKAction.fadeIn(withDuration: 0.2),
+            SKAction.wait(forDuration: 1.8),
+            SKAction.fadeOut(withDuration: 0.3)
+        ]))
     }
 }
 
