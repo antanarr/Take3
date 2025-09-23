@@ -92,6 +92,9 @@ public final class PowerupManager: PowerupManaging {
         active.first { $0.type.type == type }?.type
     }
 
+    public func reset() {
+        active.removeAll(keepingCapacity: false)
+
     public func deactivate(_ type: PowerUpType) {
         active.removeAll { $0.type.type == type }
     }

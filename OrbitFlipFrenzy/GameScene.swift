@@ -438,6 +438,14 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private lazy var nearMissTexture: SKTexture? = assets.makeParticleTexture(radius: 6, color: GamePalette.solarGold)
     private lazy var scoreBurstTexture: SKTexture? = assets.makeParticleTexture(radius: 4, color: GamePalette.neonMagenta)
     private lazy var meteorParticleTexture: SKTexture? = assets.makeParticleTexture(radius: 3, color: .white)
+    private lazy var nearMissEmitterPool = ParticlePool(maxStored: GameConstants.particlePoolMaxStored) { [weak self] in
+        guard let self else { return SKEmitterNode() }
+        return self.makeNearMissEmitter()
+    }
+    private lazy var scoreEmitterPool = ParticlePool(maxStored: GameConstants.particlePoolMaxStored) { [weak self] in
+        guard let self else { return SKEmitterNode() }
+        return self.makeScoreEmitter()
+    }
 
     private lazy var nearMissEmitterPool = ParticlePool(maxStored: GameConstants.particlePoolMaxStored) { [weak self] in
         guard let self else { return SKEmitterNode() }
@@ -476,8 +484,6 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
                                          obstacleSize: GameConstants.obstacleSize,
                                          maxStored: GameConstants.obstaclePoolMaxStored)
 
-        self.adManager = adManager
-        self.obstaclePool = ObstaclePool(assetGenerator: assets)
         super.init(size: size)
         scaleMode = .resizeFill
     }
@@ -489,12 +495,30 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Scene Lifecycle
 
     public override func didMove(to view: SKView) {
+        lastUpdate = 0
+        spawnTimer = 0
+        currentTimeSnapshot = 0
+        lastTapTime = 0
+        touchBeganTime = nil
+        doubleFlipArmed = false
+        doubleFlipReadyTime = 0
+        meteorShowerEnds = 0
+        inversionEnds = 0
+        gravityEnds = 0
+        tutorialObstaclesRemaining = GameConstants.tutorialGhostObstacles
+        isGameOver = false
+
         physicsWorld.gravity = .zero
         physicsWorld.contactDelegate = self
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
         backgroundColor = GamePalette.deepNavy
 
         replayRecorder.reset()
+        powerups.reset()
+        clearPowerUps()
+        ghostNode?.removeAllActions()
+        ghostNode?.removeFromParent()
+        ghostNode = nil
         clearPowerUps()
         let background = assets.makeBackground(size: view.bounds.size)
         addChild(background)
@@ -1102,6 +1126,8 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
+    private func makeNearMissEmitter() -> SKEmitterNode {
+=======
 
     private func makeNearMissEmitter() -> SKEmitterNode {
 
