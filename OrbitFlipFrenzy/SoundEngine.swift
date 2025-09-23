@@ -45,7 +45,7 @@ public final class SoundEngine: SoundPlaying {
     private func configuration(for event: SoundEvent) -> ([Double], [Double]) {
         switch event {
         case .gameStart:
-            return (stride(from: 130.81, through: 392.0, by: 30.0).map { $0 }, Array(repeating: 0.05, count: 9))
+            return ([130.81, 174.61, 220.0, 261.63, 329.63, 392.0], Array(repeating: 0.05, count: 6))
         case .playerFlip:
             return ([440.0], [0.1])
         case .nearMiss:
