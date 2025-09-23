@@ -173,4 +173,8 @@ public final class MenuScene: SKScene {
             menuDelegate?.menuScene(self, didSelectProduct: productTitle)
         }
     }
+
+    public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        startButton?.setPressed(false)
+    }
 }
