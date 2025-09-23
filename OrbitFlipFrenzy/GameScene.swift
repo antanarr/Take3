@@ -77,6 +77,29 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
             currentMultiplier * streakMultiplier
         }
 
+        func currentGems() -> Int {
+            data.gems
+        }
+
+        func canAfford(gems amount: Int) -> Bool {
+            data.gems >= amount
+        }
+
+        @discardableResult
+        func spendGems(_ amount: Int) -> Bool {
+            guard data.gems >= amount else { return false }
+            data.gems -= amount
+            return true
+        }
+
+        func addGems(_ amount: Int) {
+            data.gems += amount
+        }
+
+        func trackRewarded(placement: String) {
+            analytics.track(.adWatched(placement: placement))
+        }
+
         func reset() {
             score = 0
             currentMultiplier = 1.0
@@ -242,6 +265,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private let sound: SoundPlaying
     private let haptics: HapticProviding
     private let powerups: PowerupManaging
+    private let adManager: AdManaging
     private let obstaclePool: ObstaclePool
     private let replayRecorder = ReplayRecorder()
 
@@ -256,6 +280,12 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var powerupLabel: SKLabelNode?
     private var streakLabel: SKLabelNode?
     private var streakBadge: SKShapeNode?
+    private var gemHUDNode: SKNode?
+    private var gemLabel: SKLabelNode?
+    private var ghostCoachButton: SKSpriteNode?
+    private var ghostSubtitleLabel: SKLabelNode?
+    private var powerDropButton: SKSpriteNode?
+    private var powerSubtitleLabel: SKLabelNode?
     private var eventBanner: SKLabelNode?
     private var shieldAura: SKShapeNode?
     private var inversionOverlay: SKSpriteNode?
@@ -284,13 +314,27 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var lastKnownLevel: Int = 1
     private var lastStreakActive: Bool = false
     private var lastStreakMultiplier: CGFloat = 1.0
+    private var lastGemCount: Int = -1
+    private var lastGhostAssistRemaining: Int = -1
+    private var lastGhostAdState: Bool = false
+    private var lastGhostAdReady: Bool = false
+    private var lastPowerAffordable: Bool = false
 
     private let streakPulseActionKey = "streakPulse"
+    private let ghostGuideActionKey = "ghostGuideAction"
+    private let ghostFollowActionKey = "ghostFollowAction"
+    private let ghostFadeActionKey = "ghostFadeAction"
     private lazy var nearMissTexture: SKTexture? = assets.makeParticleTexture(radius: 6, color: GamePalette.solarGold)
     private lazy var scoreBurstTexture: SKTexture? = assets.makeParticleTexture(radius: 4, color: GamePalette.neonMagenta)
     private lazy var meteorParticleTexture: SKTexture? = assets.makeParticleTexture(radius: 3, color: .white)
+    private lazy var gemParticleTexture: SKTexture? = assets.makeParticleTexture(radius: 5, color: GamePalette.solarGold)
+    private lazy var shieldBurstTexture: SKTexture? = assets.makeParticleTexture(radius: 5, color: GamePalette.cyan)
 
     private var currentTimeSnapshot: TimeInterval = 0
+    private var ghostAdInProgress = false
+    private var ghostAdReady = false
+    private var adReadinessPollAccumulator: TimeInterval = 0
+    private var activeHUDButton: SKSpriteNode?
 
     // MARK: - Initialization
 
@@ -299,12 +343,14 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
                 assets: AssetGenerating,
                 sound: SoundPlaying,
                 haptics: HapticProviding,
-                powerups: PowerupManaging) {
+                powerups: PowerupManaging,
+                adManager: AdManaging) {
         self.viewModel = viewModel
         self.assets = assets
         self.sound = sound
         self.haptics = haptics
         self.powerups = powerups
+        self.adManager = adManager
         self.obstaclePool = ObstaclePool(assetGenerator: assets)
         super.init(size: size)
         scaleMode = .resizeFill
@@ -337,8 +383,18 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         lastStreakActive = viewModel.isStreakMultiplierActive
         lastStreakMultiplier = viewModel.streakMultiplier
         activePowerupTypes = Set(powerups.activeTypes)
+        ghostAdInProgress = false
+        ghostAdReady = adManager.isRewardedReady
+        activeHUDButton = nil
+        lastGemCount = -1
+        lastGhostAssistRemaining = -1
+        lastGhostAdState = false
+        lastGhostAdReady = ghostAdReady
+        lastPowerAffordable = false
+        adReadinessPollAccumulator = 0
         updateHUD()
         updatePowerupHUD()
+        updateMonetizationButtons(force: true)
         viewModel.registerStart()
         specialEventsTriggered.removeAll()
     }
@@ -374,16 +430,17 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func configureGhost() {
+        ghostNode?.removeFromParent()
         let ghost = SKShapeNode(circleOfRadius: 32)
         ghost.fillColor = GamePalette.solarGold.withAlphaComponent(0.1)
         ghost.strokeColor = GamePalette.solarGold
         ghost.lineWidth = 2
-        ghost.alpha = 0.3
+        ghost.alpha = 0.0
         ghost.zPosition = 5
         ghost.name = "ghost"
         addChild(ghost)
         ghostNode = ghost
-        ghost.isHidden = false
+        ghost.run(SKAction.fadeAlpha(to: 0.3, duration: 0.25))
     }
 
     private func configureSocialProof() {
@@ -413,6 +470,15 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         powerupLabel?.removeFromParent()
         streakBadge?.removeFromParent()
         eventBanner?.removeFromParent()
+        gemHUDNode?.removeFromParent()
+        ghostCoachButton?.removeFromParent()
+        powerDropButton?.removeFromParent()
+
+        gemLabel = nil
+        ghostCoachButton = nil
+        ghostSubtitleLabel = nil
+        powerDropButton = nil
+        powerSubtitleLabel = nil
 
         let score = SKLabelNode(fontNamed: "Orbitron-Bold")
         score.fontSize = 28
@@ -444,9 +510,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         addChild(level)
         levelLabel = level
 
-        let power = SKLabelNode(fontNamed: "SFProRounded-Regular")
-        power.fontSize = 14
-        power.fontColor = UIColor.white.withAlphaComponent(0.8)
+        let power = SKLabelNode(fontNamed: "SFProRounded-Bold")
+        power.fontSize = 16
+        power.fontColor = UIColor.white.withAlphaComponent(0.85)
         power.text = "Power-ups: None"
         power.verticalAlignmentMode = .center
         power.horizontalAlignmentMode = .center
@@ -473,6 +539,41 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         badge.addChild(streakText)
         streakLabel = streakText
 
+        let gemContainer = SKNode()
+        gemContainer.zPosition = 55
+        let gemIcon = assets.makeGemIcon(radius: 12)
+        gemIcon.position = CGPoint(x: -26, y: 0)
+        gemContainer.addChild(gemIcon)
+        let gemValue = SKLabelNode(fontNamed: "Orbitron-Bold")
+        gemValue.fontSize = 18
+        gemValue.fontColor = GamePalette.solarGold
+        gemValue.verticalAlignmentMode = .center
+        gemValue.horizontalAlignmentMode = .left
+        gemValue.text = "0"
+        gemValue.position = CGPoint(x: -4, y: -2)
+        gemContainer.addChild(gemValue)
+        addChild(gemContainer)
+        gemHUDNode = gemContainer
+        gemLabel = gemValue
+
+        let ghostButton = assets.makeMonetizationButton(title: "Ghost Coach",
+                                                        subtitle: "Watch ad to extend help",
+                                                        icon: "👻")
+        ghostButton.zPosition = 60
+        ghostButton.name = "ghostCoach"
+        addChild(ghostButton)
+        ghostCoachButton = ghostButton
+        ghostSubtitleLabel = ghostButton.childNode(withName: "subtitle") as? SKLabelNode
+
+        let powerButton = assets.makeMonetizationButton(title: "Shield Drop",
+                                                        subtitle: "Ready when you are",
+                                                        icon: "🛡️")
+        powerButton.zPosition = 60
+        powerButton.name = "powerDrop"
+        addChild(powerButton)
+        powerDropButton = powerButton
+        powerSubtitleLabel = powerButton.childNode(withName: "subtitle") as? SKLabelNode
+
         let banner = SKLabelNode(fontNamed: "Orbitron-Bold")
         banner.fontSize = 20
         banner.fontColor = GamePalette.solarGold
@@ -494,6 +595,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         if let badge = streakBadge {
             badge.position = CGPoint(x: size.width * 0.35, y: topY)
         }
+        gemHUDNode?.position = CGPoint(x: size.width * 0.35, y: topY - 40)
+        ghostCoachButton?.position = CGPoint(x: -size.width * 0.35, y: -size.height * 0.3)
+        powerDropButton?.position = CGPoint(x: size.width * 0.35, y: -size.height * 0.3)
         powerupLabel?.position = CGPoint(x: 0, y: -size.height * 0.45)
         eventBanner?.position = CGPoint(x: 0, y: size.height * 0.28)
         inversionOverlay?.position = .zero
@@ -506,6 +610,83 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         multiplierLabel?.text = String(format: "Multiplier: x%.1f", totalMultiplier)
         levelLabel?.text = "Level \(viewModel.level)"
         updateStreakBadge()
+        updateGemHUD()
+    }
+
+    private func updateGemHUD() {
+        let gems = viewModel.currentGems()
+        if gems != lastGemCount {
+            gemLabel?.text = "\(gems)"
+            lastGemCount = gems
+            gemHUDNode?.removeAction(forKey: "gemPulse")
+            if let node = gemHUDNode {
+                let pulse = SKAction.sequence([
+                    SKAction.scale(to: 1.1, duration: 0.12),
+                    SKAction.scale(to: 1.0, duration: 0.2)
+                ])
+                node.run(pulse, withKey: "gemPulse")
+            }
+            updateMonetizationButtons(force: true)
+        }
+    }
+
+    private func updateMonetizationButtons(force: Bool = false) {
+        let remaining = max(0, tutorialObstaclesRemaining)
+        if force || remaining != lastGhostAssistRemaining || ghostAdInProgress != lastGhostAdState || ghostAdReady != lastGhostAdReady {
+            if let button = ghostCoachButton {
+                if ghostAdInProgress {
+                    button.alpha = 0.5
+                    ghostSubtitleLabel?.text = "Loading sponsor…"
+                    ghostSubtitleLabel?.fontColor = UIColor.white.withAlphaComponent(0.8)
+                } else if remaining > 0 {
+                    button.alpha = 0.35
+                    ghostSubtitleLabel?.text = "\(remaining) flips guided"
+                    ghostSubtitleLabel?.fontColor = UIColor.white.withAlphaComponent(0.7)
+                } else if !ghostAdReady {
+                    button.alpha = 0.45
+                    ghostSubtitleLabel?.text = "Preparing sponsor…"
+                    ghostSubtitleLabel?.fontColor = UIColor.white.withAlphaComponent(0.7)
+                } else {
+                    button.alpha = 1.0
+                    ghostSubtitleLabel?.text = "Watch ad • +\(GameConstants.ghostAssistAdGemReward)💎"
+                    ghostSubtitleLabel?.fontColor = UIColor.white
+                }
+            }
+            lastGhostAssistRemaining = remaining
+            lastGhostAdState = ghostAdInProgress
+            lastGhostAdReady = ghostAdReady
+        }
+
+        let affordable = viewModel.canAfford(gems: GameConstants.powerCrateGemCost)
+        if force || affordable != lastPowerAffordable {
+            if let button = powerDropButton {
+                button.alpha = affordable ? 1.0 : 0.4
+            }
+            if affordable {
+                powerSubtitleLabel?.text = "\(GameConstants.powerCrateGemCost) gems"
+                powerSubtitleLabel?.fontColor = UIColor.white.withAlphaComponent(0.9)
+            } else {
+                powerSubtitleLabel?.text = "Need \(GameConstants.powerCrateGemCost) gems"
+                powerSubtitleLabel?.fontColor = UIColor.white.withAlphaComponent(0.6)
+            }
+            lastPowerAffordable = affordable
+        }
+    }
+
+    private func updateGhostCoachReadiness(delta: TimeInterval) {
+        guard !ghostAdInProgress else { return }
+        adReadinessPollAccumulator += delta
+        if adReadinessPollAccumulator < GameConstants.adReadinessPollInterval { return }
+        adReadinessPollAccumulator = 0
+        let wasReady = ghostAdReady
+        let ready = adManager.isRewardedReady
+        if ready != wasReady {
+            ghostAdReady = ready
+            if ready && !wasReady && tutorialObstaclesRemaining <= 0 {
+                showEventBanner("Ghost coach ready")
+            }
+            updateMonetizationButtons(force: true)
+        }
     }
 
     private func updateStreakBadge() {
@@ -673,13 +854,31 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Touch Handling
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isGameOver else { return }
+        guard !isGameOver, let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        if let ghostButton = ghostCoachButton, ghostButton.contains(location) {
+            activeHUDButton = ghostButton
+            ghostButton.setPressed(true)
+            return
+        }
+        if let powerButton = powerDropButton, powerButton.contains(location) {
+            activeHUDButton = powerButton
+            powerButton.setPressed(true)
+            return
+        }
         touchBeganTime = currentTimeSnapshot
         doubleFlipArmed = false
     }
 
     public override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isGameOver, let start = touchBeganTime else { return }
+        guard !isGameOver, let touch = touches.first else { return }
+        if let button = activeHUDButton {
+            let location = touch.location(in: self)
+            let contains = button.contains(location)
+            button.setPressed(contains)
+            return
+        }
+        guard let start = touchBeganTime else { return }
         if !doubleFlipArmed && currentTimeSnapshot - start >= GameConstants.doubleFlipHoldThreshold {
             doubleFlipArmed = true
             doubleFlipReadyTime = currentTimeSnapshot
@@ -687,7 +886,16 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isGameOver else { return }
+        guard !isGameOver, let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        if let button = activeHUDButton {
+            button.setPressed(false)
+            activeHUDButton = nil
+            if button.contains(location) {
+                handleHUDButtonTap(button)
+            }
+            return
+        }
         defer { touchBeganTime = nil }
         let now = currentTimeSnapshot
         if doubleFlipArmed && now - doubleFlipReadyTime <= GameConstants.doubleFlipReleaseWindow {
@@ -699,8 +907,18 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard !isGameOver else { return }
+        activeHUDButton?.setPressed(false)
+        activeHUDButton = nil
         touchBeganTime = nil
         doubleFlipArmed = false
+    }
+
+    private func handleHUDButtonTap(_ button: SKSpriteNode) {
+        if button == ghostCoachButton {
+            handleGhostCoachTap()
+        } else if button == powerDropButton {
+            handlePowerDropTap()
+        }
     }
 
     private func performFlip(doubleJump: Bool) {
@@ -732,6 +950,163 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         if doubleJump {
             sound.play(.nearMiss)
         }
+    }
+
+    // MARK: - Monetization Hooks
+
+    private func handleGhostCoachTap() {
+        if tutorialObstaclesRemaining > 0 {
+            showEventBanner("Ghost already guiding")
+            haptics.playerAction()
+            return
+        }
+        if ghostAdInProgress {
+            showEventBanner("Sponsor loading…")
+            return
+        }
+        if !ghostAdReady {
+            showEventBanner("Sponsor prepping…")
+            haptics.playerAction()
+            return
+        }
+        guard let controller = view?.window?.rootViewController else {
+            showEventBanner("Unable to present ad")
+            haptics.playerAction()
+            return
+        }
+
+        ghostAdInProgress = true
+        ghostAdReady = false
+        adReadinessPollAccumulator = 0
+        updateMonetizationButtons(force: true)
+        showEventBanner("Loading ghost coach…")
+        adManager.showRewardedAd(from: controller) { [weak self] in
+            guard let self else { return }
+            self.ghostAdInProgress = false
+            self.ghostAdReady = self.adManager.isRewardedReady
+            self.adReadinessPollAccumulator = 0
+            self.viewModel.trackRewarded(placement: "ghost_coach")
+            self.viewModel.addGems(GameConstants.ghostAssistAdGemReward)
+            self.reenableGhostAssist(count: GameConstants.ghostAssistObstacles, message: "Ghost coach engaged!")
+            self.updateGemHUD()
+            if let gemNode = self.gemHUDNode {
+                self.emitGemBurst(at: gemNode.position)
+            }
+            self.updateMonetizationButtons(force: true)
+        }
+    }
+
+    private func handlePowerDropTap() {
+        guard viewModel.spendGems(GameConstants.powerCrateGemCost) else {
+            showEventBanner("Earn more gems for shield drop")
+            showInsufficientGemsFeedback(on: powerDropButton)
+            return
+        }
+        updateGemHUD()
+        updateMonetizationButtons(force: true)
+        showEventBanner("Shield drop inbound!")
+        spawnSponsoredPowerDrop(of: .shield)
+    }
+
+    private func showInsufficientGemsFeedback(on button: SKSpriteNode?) {
+        guard let button else { return }
+        let originalAlpha = button.alpha
+        let shake = SKAction.sequence([
+            SKAction.moveBy(x: -6, y: 0, duration: 0.05),
+            SKAction.moveBy(x: 12, y: 0, duration: 0.08),
+            SKAction.moveBy(x: -6, y: 0, duration: 0.05)
+        ])
+        button.run(shake, withKey: "shake")
+        let flash = SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.25, duration: 0.08),
+            SKAction.fadeAlpha(to: originalAlpha, duration: 0.2)
+        ])
+        button.run(flash)
+        haptics.playerAction()
+    }
+
+    private func spawnSponsoredPowerDrop(of type: PowerUpType) {
+        let drop = assets.makePowerUpNode(of: type)
+        drop.physicsBody = nil
+        drop.position = CGPoint(x: 0, y: size.height * 0.45)
+        drop.zPosition = 90
+        drop.setScale(0.6)
+        drop.alpha = 0
+        addChild(drop)
+
+        let appear = SKAction.fadeAlpha(to: 1.0, duration: 0.1)
+        let target = playerNode.parent?.convert(playerNode.position, to: self) ?? .zero
+        let move = SKAction.move(to: target, duration: 0.6)
+        move.timingMode = .easeIn
+        let scale = SKAction.scale(to: 0.2, duration: 0.6)
+        let collect = SKAction.run { [weak self] in
+            guard let self else { return }
+            self.activatePowerUp(of: type)
+            self.emitShieldBurst(at: target)
+        }
+
+        drop.run(SKAction.sequence([
+            appear,
+            SKAction.group([move, scale]),
+            collect,
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    private func emitGemBurst(at position: CGPoint) {
+        guard let texture = gemParticleTexture else { return }
+        let emitter = SKEmitterNode()
+        emitter.particleTexture = texture
+        emitter.numParticlesToEmit = 24
+        emitter.particleLifetime = 0.6
+        emitter.particleBirthRate = 120
+        emitter.particleAlpha = 0.9
+        emitter.particleAlphaSpeed = -1.4
+        emitter.particleSpeed = 100
+        emitter.particleSpeedRange = 40
+        emitter.particleScale = 0.45
+        emitter.particleScaleSpeed = -0.25
+        emitter.particleColorBlendFactor = 1
+        emitter.particleColor = GamePalette.solarGold
+        emitter.position = position
+        emitter.zPosition = 95
+        addChild(emitter)
+        emitter.run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.6),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    private func emitShieldBurst(at position: CGPoint) {
+        guard let texture = shieldBurstTexture else { return }
+        let emitter = SKEmitterNode()
+        emitter.particleTexture = texture
+        emitter.numParticlesToEmit = 20
+        emitter.particleLifetime = 0.5
+        emitter.particleBirthRate = 100
+        emitter.particleAlpha = 0.8
+        emitter.particleAlphaSpeed = -1.5
+        emitter.particleSpeed = 120
+        emitter.particleSpeedRange = 30
+        emitter.particleScale = 0.35
+        emitter.particleScaleSpeed = -0.2
+        emitter.particleColorBlendFactor = 1
+        emitter.particleColor = GamePalette.cyan
+        emitter.position = position
+        emitter.zPosition = 95
+        addChild(emitter)
+        emitter.run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.5),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    private func reenableGhostAssist(count: Int, message: String) {
+        tutorialObstaclesRemaining = count
+        configureGhost()
+        showEventBanner(message)
+        haptics.milestone()
+        updateMonetizationButtons(force: true)
     }
 
     // MARK: - Update Loop
@@ -771,6 +1146,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         updateShieldAura()
         updatePowerupHUD()
         refreshStreakIfNeeded()
+        updateGhostCoachReadiness(delta: delta)
         handleSpecialEvents()
     }
 
@@ -828,6 +1204,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         if tutorialObstaclesRemaining > 0 {
             tutorialObstaclesRemaining -= 1
             showGhostGuidance(for: obstacle, on: ring)
+            updateMonetizationButtons(force: tutorialObstaclesRemaining == 0)
+        } else {
+            updateMonetizationButtons()
         }
         if Int.random(in: 0..<100) < 8 {
             spawnPowerUp(on: ring, angle: angle + .pi / 4)
@@ -927,6 +1306,10 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func applyPowerUp(_ node: SKShapeNode) {
         guard let type = determinePowerUpType(from: node) else { return }
         node.removeFromParent()
+        activatePowerUp(of: type)
+    }
+
+    private func activatePowerUp(of type: PowerUpType) {
         let currentTime = currentTimeSnapshot
         let powerUp: PowerUp
         switch type {
@@ -950,18 +1333,38 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func updateGhostFollowing() {
-        guard let ghost = ghostNode, tutorialObstaclesRemaining > 0 else {
-            ghostNode?.removeFromParent()
-            ghostNode = nil
+        guard let ghost = ghostNode else { return }
+        if tutorialObstaclesRemaining <= 0 {
+            ghost.removeAction(forKey: ghostFollowActionKey)
+            if ghost.action(forKey: ghostGuideActionKey) != nil {
+                return
+            }
+            if ghost.action(forKey: ghostFadeActionKey) == nil {
+                let fadeOut = SKAction.sequence([
+                    SKAction.wait(forDuration: 0.35),
+                    SKAction.fadeOut(withDuration: 0.3),
+                    SKAction.run { [weak self, weak ghost] in
+                        if let ghost, self?.ghostNode === ghost {
+                            ghost.removeFromParent()
+                            self?.ghostNode = nil
+                        } else {
+                            ghost?.removeFromParent()
+                        }
+                    }
+                ])
+                ghost.run(fadeOut, withKey: ghostFadeActionKey)
+            }
             return
         }
+
+        guard ghost.action(forKey: ghostGuideActionKey) == nil else { return }
         guard let ring = ringContainers.first else { return }
         let angle = playerNode.parent?.convert(playerNode.position, to: ring.node) ?? .zero
         let currentAngle = atan2(angle.y, angle.x)
         let ghostTarget = CGPoint(x: cos(currentAngle) * (ring.radius + 30), y: sin(currentAngle) * (ring.radius + 30))
         let action = SKAction.move(to: ghostTarget, duration: 0.3)
         action.timingMode = .easeInEaseOut
-        ghost.run(action)
+        ghost.run(action, withKey: ghostFollowActionKey)
     }
 
     private func showGhostGuidance(for obstacle: SKShapeNode, on ring: RingContainer) {
@@ -976,7 +1379,12 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         path.addLine(to: points[1])
         let follow = SKAction.follow(path, asOffset: false, orientToPath: false, duration: 0.6)
         follow.timingMode = .easeInEaseOut
-        ghost.run(follow)
+        ghost.removeAction(forKey: ghostFollowActionKey)
+        let sequence = SKAction.sequence([
+            follow,
+            SKAction.wait(forDuration: 0.2)
+        ])
+        ghost.run(sequence, withKey: ghostGuideActionKey)
     }
 
     private func applyMagnetIfNeeded(delta: TimeInterval) {
@@ -1194,6 +1602,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         updateShieldAura()
         updatePowerupHUD()
         updateHUD()
+        updateMonetizationButtons(force: true)
         spawnTimer = 0
         specialEventsTriggered.removeAll()
         obstaclePool.allActive().forEach { obstaclePool.recycle($0) }

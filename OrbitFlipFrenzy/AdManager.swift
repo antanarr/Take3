@@ -8,15 +8,25 @@ public protocol AdManaging {
 
 public final class AdManager: AdManaging {
     private var lastShown: Date?
+    private var rewardedReady = false
+    private var reloadTask: DispatchWorkItem?
+    private let warmupDelay: TimeInterval = 2.0
 
-    public init() {}
+    public init() {
+        scheduleRewardedReload()
+    }
 
     public var isRewardedReady: Bool {
-        true
+        rewardedReady
     }
 
     public func showRewardedAd(from viewController: UIViewController, completion: @escaping () -> Void) {
+        guard rewardedReady else { return }
+
+        rewardedReady = false
+        reloadTask?.cancel()
         lastShown = Date()
+
         let alert = UIAlertController(title: "Rewarded Ad", message: "Watching...", preferredStyle: .alert)
         viewController.present(alert, animated: true)
         let spinner = UIActivityIndicatorView(style: .large)
@@ -27,10 +37,22 @@ public final class AdManager: AdManaging {
             spinner.bottomAnchor.constraint(equalTo: alert.view.bottomAnchor, constant: -20)
         ])
         spinner.startAnimating()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
             alert.dismiss(animated: true) {
+                self?.scheduleRewardedReload()
                 completion()
             }
         }
+    }
+
+    private func scheduleRewardedReload() {
+        reloadTask?.cancel()
+        rewardedReady = false
+        let task = DispatchWorkItem { [weak self] in
+            self?.rewardedReady = true
+            self?.reloadTask = nil
+        }
+        reloadTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + warmupDelay, execute: task)
     }
 }

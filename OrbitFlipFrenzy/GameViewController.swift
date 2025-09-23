@@ -115,7 +115,8 @@ private final class DependencyContainer {
                               assets: assets,
                               sound: sound,
                               haptics: haptics,
-                              powerups: powerups)
+                              powerups: powerups,
+                              adManager: adManager)
         return scene
     }
 

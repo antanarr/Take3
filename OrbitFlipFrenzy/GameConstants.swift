@@ -19,6 +19,9 @@ public struct GameConstants {
     public static let powerupSlowFactor: CGFloat = 0.5
     public static let magnetStrength: CGFloat = 50.0
     public static let tutorialGhostObstacles: Int = 3
+    public static let ghostAssistObstacles: Int = 2
+    public static let ghostAssistAdGemReward: Int = 40
+    public static let powerCrateGemCost: Int = 80
     public static let maxRings: Int = 3
     public static let ringRadii: [CGFloat] = [90.0, 140.0, 190.0]
     public static let ringStrokeWidth: CGFloat = 6.0
@@ -32,6 +35,7 @@ public struct GameConstants {
     public static let meteorShowerDuration: TimeInterval = 6.0
     public static let gravityReversalDuration: TimeInterval = 8.0
     public static let magnetSafeZoneRadius: CGFloat = 24.0
+    public static let adReadinessPollInterval: TimeInterval = 0.5
 }
 
 public enum GamePalette {
