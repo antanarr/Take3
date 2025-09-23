@@ -115,6 +115,7 @@ public final class GameOverScene: SKScene {
     private var gemContinueButton: SKSpriteNode?
     private var gemBalanceLabel: SKLabelNode?
     private var monetizationStatusLabel: SKLabelNode?
+    private var meteorEmitter: SKEmitterNode?
     private var lastGemBalance: Int = 0
     private var statusMessageRemaining: TimeInterval = 0
     private var lastRewardedReady: Bool = false
@@ -138,6 +139,29 @@ public final class GameOverScene: SKScene {
         addChild(assets.makeBackground(size: view.bounds.size))
         viewModel.playCollisionFeedback()
         viewModel.preloadRewarded()
+
+        let meteor = SKEmitterNode()
+        meteor.particleTexture = assets.makeParticleTexture(radius: 3, color: GamePalette.cyan)
+        meteor.particleBirthRate = 28
+        meteor.particleLifetime = 4.5
+        meteor.particleLifetimeRange = 1.5
+        meteor.particleSpeed = 140
+        meteor.particleSpeedRange = 50
+        meteor.emissionAngle = CGFloat.pi * 1.12
+        meteor.emissionAngleRange = CGFloat.pi / 12
+        meteor.particleAlpha = 0.75
+        meteor.particleAlphaRange = 0.2
+        meteor.particleAlphaSpeed = -0.2
+        meteor.particleScale = 0.35
+        meteor.particleScaleRange = 0.15
+        meteor.particleScaleSpeed = -0.05
+        meteor.particleColorBlendFactor = 1.0
+        meteor.position = CGPoint(x: view.bounds.width * 0.35, y: view.bounds.height * 0.45)
+        meteor.particlePositionRange = CGVector(dx: view.bounds.width * 1.2, dy: view.bounds.height * 0.2)
+        meteor.zPosition = -2
+        meteor.targetNode = self
+        addChild(meteor)
+        meteorEmitter = meteor
 
         let logoWidth = min(view.bounds.width * 0.65, 300)
         let logo = assets.makeLogoNode(size: CGSize(width: logoWidth, height: logoWidth * 0.4))
@@ -349,6 +373,12 @@ public final class GameOverScene: SKScene {
         if statusMessageRemaining == 0, let label = monetizationStatusLabel, label.alpha > 0 {
             label.run(SKAction.fadeOut(withDuration: 0.25))
             statusMessageRemaining = -1
+        }
+        if let view = view, let emitter = meteorEmitter {
+            emitter.position.x -= CGFloat(delta * 40)
+            if emitter.position.x < -view.bounds.width * 0.35 {
+                emitter.position.x = view.bounds.width * 0.35
+            }
         }
     }
 }
