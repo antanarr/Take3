@@ -178,6 +178,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         func recycle(_ node: SKShapeNode) {
             node.removeAllActions()
+            node.removeAllChildren()
             node.removeFromParent()
             node.userData?.removeAllObjects()
             active.remove(node)
@@ -293,6 +294,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
     private let streakPulseActionKey = "streakPulse"
     private lazy var nearMissTexture: SKTexture? = assets.makeParticleTexture(radius: 6, color: GamePalette.solarGold)
     private lazy var scoreBurstTexture: SKTexture? = assets.makeParticleTexture(radius: 4, color: GamePalette.neonMagenta)
+    private lazy var meteorParticleTexture: SKTexture? = assets.makeParticleTexture(radius: 3, color: .white)
     private lazy var scoreFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -824,8 +826,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
-    private func spawnObstacle(at time: TimeInterval, colorOverride: UIColor? = nil) {
-        guard let (ring, index) = availableRingForSpawn() else { return }
+    @discardableResult
+    private func spawnObstacle(at time: TimeInterval, colorOverride: UIColor? = nil) -> SKShapeNode? {
+        guard let (ring, index) = availableRingForSpawn() else { return nil }
         let obstacle = obstaclePool.spawn()
         let angle = CGFloat.random(in: 0...(2 * .pi))
         obstacle.zRotation = angle
@@ -848,6 +851,7 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         if Int.random(in: 0..<100) < 8 {
             spawnPowerUp(on: ring, angle: angle + .pi / 4)
         }
+        return obstacle
     }
 
     private func availableRingForSpawn() -> (RingContainer, Int)? {
@@ -885,6 +889,28 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         ring.node.addChild(node)
         node.userData = ["spawn": currentTimeSnapshot, "type": type.rawValue]
         powerUpNodes.append(node)
+    }
+
+    private func attachMeteorTrail(to obstacle: SKShapeNode, color: UIColor) {
+        guard let meteorTexture = meteorParticleTexture else { return }
+        let emitter = SKEmitterNode()
+        emitter.name = "meteorTrail"
+        emitter.particleTexture = meteorTexture
+        emitter.particleBirthRate = 120
+        emitter.particleLifetime = 1.2
+        emitter.particleAlpha = 0.9
+        emitter.particleAlphaSpeed = -1.1
+        emitter.particleScale = 0.35
+        emitter.particleScaleRange = 0.1
+        emitter.particleScaleSpeed = -0.25
+        emitter.particleSpeed = 140
+        emitter.particleSpeedRange = 80
+        emitter.emissionAngleRange = .pi * 2
+        emitter.particleColorBlendFactor = 1
+        emitter.particleColor = color
+        emitter.targetNode = self
+        emitter.zPosition = -1
+        obstacle.addChild(emitter)
     }
 
     private func updateObstacles(currentTime: TimeInterval) {
@@ -1074,7 +1100,9 @@ public final class GameScene: SKScene, SKPhysicsContactDelegate {
         meteorShowerEnds = currentTimeSnapshot + GameConstants.meteorShowerDuration
         for _ in 0..<10 {
             let rainbow = UIColor(hue: CGFloat.random(in: 0...1), saturation: 0.9, brightness: 1.0, alpha: 1.0)
-            spawnObstacle(at: currentTimeSnapshot, colorOverride: rainbow)
+            if let meteor = spawnObstacle(at: currentTimeSnapshot, colorOverride: rainbow) {
+                attachMeteorTrail(to: meteor, color: rainbow)
+            }
         }
         showEventBanner("Rainbow meteor shower!")
     }
