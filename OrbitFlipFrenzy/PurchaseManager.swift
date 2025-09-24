@@ -22,6 +22,7 @@ public final class PurchaseManager: PurchaseManaging {
         case gems100 = "com.orbitflip.gems_100"
         case gems550 = "com.orbitflip.gems_550"
         case gems1200 = "com.orbitflip.gems_1200"
+        case gems3000 = "com.orbitflip.gems_3000"
 
         var displayName: String {
             switch self {
@@ -35,6 +36,8 @@ public final class PurchaseManager: PurchaseManaging {
                 return "550 Gems"
             case .gems1200:
                 return "1200 Gems"
+            case .gems3000:
+                return "3000 Gems"
             }
         }
 
@@ -50,6 +53,8 @@ public final class PurchaseManager: PurchaseManaging {
                 return "+10% bonus gems to chase rare cosmetics."
             case .gems1200:
                 return "+20% bonus gems for long-term upgrades."
+            case .gems3000:
+                return "Whale bundle with massive gem payout."
             }
         }
 
@@ -67,6 +72,8 @@ public final class PurchaseManager: PurchaseManaging {
                 return "gems550"
             case .gems1200:
                 return "gems1200"
+            case .gems3000:
+                return "gems3000"
             }
         }
 
@@ -86,6 +93,8 @@ public final class PurchaseManager: PurchaseManaging {
                 return "$4.99"
             case .gems1200:
                 return "$9.99"
+            case .gems3000:
+                return "$49.99"
             }
         }
 
@@ -97,6 +106,8 @@ public final class PurchaseManager: PurchaseManaging {
                 return 550
             case .gems1200:
                 return 1200
+            case .gems3000:
+                return 3000
             case .starterPack:
                 return GameConstants.starterPackGemGrant
             case .removeAds:
@@ -116,6 +127,8 @@ public final class PurchaseManager: PurchaseManaging {
                 return 3
             case .gems1200:
                 return 4
+            case .gems3000:
+                return 5
             }
         }
 

@@ -230,6 +230,9 @@ public final class GameData {
         case .gems1200:
             grantGems(1200)
             return .gems(amount: 1200)
+        case .gems3000:
+            grantGems(3000)
+            return .gems(amount: 3000)
         }
     }
 
@@ -247,7 +250,7 @@ public final class GameData {
             }
             markStarterPackPrompted()
             return .starterPackSkin(identifier: GameConstants.starterPackSkinIdentifier)
-        case .gems100, .gems550, .gems1200:
+        case .gems100, .gems550, .gems1200, .gems3000:
             return nil
         }
     }

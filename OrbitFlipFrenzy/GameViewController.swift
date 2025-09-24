@@ -13,6 +13,7 @@ final class GameViewController: UIViewController {
 
     private let container = DependencyContainer()
     private var currentGameScene: GameScene?
+    private var notificationObservers: [NSObjectProtocol] = []
 
     override func loadView() {
         view = skView
@@ -22,10 +23,15 @@ final class GameViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = GamePalette.deepNavy
         presentMenu()
+        registerForLifecycleNotifications()
     }
 
     override var prefersStatusBarHidden: Bool { true }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+
+    deinit {
+        notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
 
     private func presentMenu() {
         let scene = container.makeMenuScene(size: view.bounds.size)
@@ -42,11 +48,28 @@ final class GameViewController: UIViewController {
 
     private func presentGameOver(with result: GameResult) {
         guard let gameScene = currentGameScene else { return }
-        gameScene.isPaused = true
+        gameScene.pauseForInterruption()
         let scene = container.makeGameOverScene(size: view.bounds.size, result: result)
         scene.overDelegate = self
         skView.presentScene(scene, transition: .crossFade(withDuration: 0.5))
         currentGameScene = gameScene
+    }
+
+    private func registerForLifecycleNotifications() {
+        let center = NotificationCenter.default
+        let willResign = center.addObserver(forName: UIApplication.willResignActiveNotification,
+                                            object: nil,
+                                            queue: .main) { [weak self] _ in
+            self?.currentGameScene?.pauseForInterruption()
+        }
+        notificationObservers.append(willResign)
+
+        let didBecomeActive = center.addObserver(forName: UIApplication.didBecomeActiveNotification,
+                                                 object: nil,
+                                                 queue: .main) { [weak self] _ in
+            self?.currentGameScene?.resumeFromInterruption()
+        }
+        notificationObservers.append(didBecomeActive)
     }
 }
 
