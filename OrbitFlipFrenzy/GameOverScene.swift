@@ -9,20 +9,6 @@ public protocol GameOverSceneDelegate: AnyObject {
     func gameOverSceneDidReturnHome(_ scene: GameOverScene)
 }
 
-public struct Challenge {
-    public let seed: UInt32
-    public let targetScore: Int
-
-    public init(seed: UInt32 = arc4random(), targetScore: Int) {
-        self.seed = seed
-        self.targetScore = targetScore
-    }
-
-    public func generateLink() -> String {
-        "orbitflip://challenge?seed=\(seed)&score=\(targetScore)"
-    }
-}
-
 public final class GameOverScene: SKScene {
 
     public final class ViewModel {
@@ -51,50 +37,45 @@ public final class GameOverScene: SKScene {
             assets.makeButtonNode(text: title, size: size, icon: icon)
         }
 
-        func preloadRewarded() {
-            adManager.preload()
-        }
-
-        func showRewarded(from controller: UIViewController, completion: @escaping (Result<Void, AdManager.AdError>) -> Void) {
-            adManager.showRewardedAd(from: controller) { [weak self] result in
-                guard let self else { return }
-                switch result {
-                case .success:
-                    self.analytics.track(.adWatched(placement: "continue"))
-                case let .failure(error):
-                    self.analytics.track(.monetizationError(message: "Rewarded failed: \(error.description)"))
-                }
-                completion(result)
-            }
-        }
-
-        func playCollisionFeedback() {
-            haptics.collision()
-            sound.play(.collision)
-        }
-
         func share(result: GameResult, from controller: UIViewController) {
             analytics.track(.shareInitiated)
-            var items: [Any] = ["I flipped out at \(result.score)! 🚀"]
-            items.append(assets.makeAppIconImage(size: CGSize(width: 256, height: 256)))
+            var message = "I flipped out at \(result.score)! 🚀"
+            if let challenge = result.challenge, let link = challenge.generateLink() {
+                message += " Beat it: \(link.absoluteString)"
+            }
+            var items: [Any] = [message]
             if let data = result.replayData {
-                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("orbitflip.gif")
-                try? data.write(to: tempURL)
-                items.append(tempURL)
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("orbitflip_replay.gif")
+                try? data.write(to: url, options: .atomic)
+                items.append(url)
+            }
+            items.append(assets.makeAppIconImage(size: CGSize(width: 256, height: 256)))
+            if let challenge = result.challenge, let link = challenge.generateLink() {
+                items.append(link)
             }
             let activity = UIActivityViewController(activityItems: items, applicationActivities: nil)
             controller.present(activity, animated: true)
         }
 
-        var rewardedReady: Bool { adManager.isRewardedReady }
-
-        var gemReviveCost: Int { GameConstants.reviveGemCost }
-
-        func canAffordGemRevive() -> Bool {
-            data.canAfford(gemReviveCost)
+        func showRewarded(from controller: UIViewController, completion: @escaping (Result<Void, AdManager.AdError>) -> Void) {
+            adManager.showRewardedAd(from: controller) { [weak self] result in
+                if case .success = result {
+                    self?.analytics.track(.adWatched(placement: "revive"))
+                }
+                completion(result)
+            }
         }
 
-        @discardableResult
+        func playCrashFeedback() {
+            sound.play(.collision)
+            haptics.collision()
+        }
+
+        var rewardedReady: Bool { adManager.isRewardedReady }
+        var gemReviveCost: Int { GameConstants.reviveGemCost }
+
+        func canAffordGemRevive() -> Bool { data.canAfford(gemReviveCost) }
+
         func spendGemsForRevive() -> Bool {
             guard data.spendGems(gemReviveCost) else { return false }
             analytics.track(.gemsSpent(amount: gemReviveCost, reason: "revive"))
@@ -108,19 +89,17 @@ public final class GameOverScene: SKScene {
 
     private let viewModel: ViewModel
     private let assets: AssetGenerating
-    private var result: GameResult
+    private let result: GameResult
+
     private var shareButton: SKSpriteNode?
+    private var continueAdButton: SKSpriteNode?
+    private var continueGemButton: SKSpriteNode?
     private var retryButton: SKSpriteNode?
-    private var continueButton: SKSpriteNode?
     private var homeButton: SKSpriteNode?
-    private var gemContinueButton: SKSpriteNode?
     private var gemBalanceLabel: SKLabelNode?
-    private var monetizationStatusLabel: SKLabelNode?
-    private var meteorEmitter: SKEmitterNode?
-    private var lastGemBalance: Int = 0
-    private var statusMessageRemaining: TimeInterval = 0
-    private var lastRewardedReady: Bool = false
-    private var lastUpdateTime: TimeInterval = 0
+    private var statusLabel: SKLabelNode?
+    private var lastRewardedReady = false
+    private var lastGemBalance = 0
 
     public init(size: CGSize, viewModel: ViewModel, assets: AssetGenerating, result: GameResult) {
         self.viewModel = viewModel
@@ -137,296 +116,197 @@ public final class GameOverScene: SKScene {
     public override func didMove(to view: SKView) {
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
         backgroundColor = GamePalette.deepNavy
-        addChild(assets.makeBackground(size: view.bounds.size))
-        viewModel.playCollisionFeedback()
-        viewModel.preloadRewarded()
+        removeAllChildren()
 
-        let meteor = SKEmitterNode()
-        meteor.particleTexture = assets.makeParticleTexture(radius: 3, color: GamePalette.cyan)
-        meteor.particleBirthRate = 28
-        meteor.particleLifetime = 4.5
-        meteor.particleLifetimeRange = 1.5
-        meteor.particleSpeed = 140
-        meteor.particleSpeedRange = 50
-        meteor.emissionAngle = CGFloat.pi * 1.12
-        meteor.emissionAngleRange = CGFloat.pi / 12
-        meteor.particleAlpha = 0.75
-        meteor.particleAlphaRange = 0.2
-        meteor.particleAlphaSpeed = -0.2
-        meteor.particleScale = 0.35
-        meteor.particleScaleRange = 0.15
-        meteor.particleScaleSpeed = -0.05
-        meteor.particleColorBlendFactor = 1.0
-        meteor.position = CGPoint(x: view.bounds.width * 0.35, y: view.bounds.height * 0.45)
-        meteor.particlePositionRange = CGVector(dx: view.bounds.width * 1.2, dy: view.bounds.height * 0.2)
-        meteor.zPosition = -2
-        meteor.targetNode = self
-        addChild(meteor)
-        meteorEmitter = meteor
+        addChild(assets.makeBackground(size: CGSize(width: size.width * 2, height: size.height * 2)))
+        viewModel.playCrashFeedback()
 
-        let logoWidth = min(view.bounds.width * 0.65, 300)
-        let logo = assets.makeLogoNode(size: CGSize(width: logoWidth, height: logoWidth * 0.4))
-        logo.position = CGPoint(x: 0, y: view.bounds.height * 0.24)
-        logo.alpha = 0
-        logo.run(SKAction.fadeIn(withDuration: 0.8))
-        addChild(logo)
-
-        let iconSprite = SKSpriteNode(texture: SKTexture(image: assets.makeAppIconImage(size: CGSize(width: 140, height: 140))))
-        iconSprite.size = CGSize(width: 96, height: 96)
-        iconSprite.position = CGPoint(x: -logoWidth * 0.55, y: logo.position.y)
-        iconSprite.alpha = 0
-        iconSprite.run(SKAction.sequence([SKAction.wait(forDuration: 0.2), SKAction.fadeIn(withDuration: 0.7)]))
-        addChild(iconSprite)
-
-
-=======
-        let logoWidth = min(view.bounds.width * 0.65, 300)
-        let logo = assets.makeLogoNode(size: CGSize(width: logoWidth, height: logoWidth * 0.4))
-        logo.position = CGPoint(x: 0, y: view.bounds.height * 0.24)
-        logo.alpha = 0
-        logo.run(SKAction.fadeIn(withDuration: 0.8))
-        addChild(logo)
-
-        let iconSprite = SKSpriteNode(texture: SKTexture(image: assets.makeAppIconImage(size: CGSize(width: 140, height: 140))))
-        iconSprite.size = CGSize(width: 96, height: 96)
-        iconSprite.position = CGPoint(x: -logoWidth * 0.55, y: logo.position.y)
-        iconSprite.alpha = 0
-        iconSprite.run(SKAction.sequence([SKAction.wait(forDuration: 0.2), SKAction.fadeIn(withDuration: 0.7)]))
-        addChild(iconSprite)
-
-
-        let headline = SKLabelNode(text: "Don't lose your streak!")
-        headline.fontName = "Orbitron-Bold"
-        headline.fontSize = 26
-        headline.fontColor = GamePalette.solarGold
-        headline.position = CGPoint(x: 0, y: logo.position.y - logoWidth * 0.35)
-
-        headline.alpha = 0
-        headline.run(SKAction.sequence([SKAction.wait(forDuration: 0.3), SKAction.fadeIn(withDuration: 0.6)]))
-        addChild(headline)
-=======
-        addChild(headline)
-
-        let statsBadge = assets.makeBadgeNode(title: "Score \(result.score)",
-                                              subtitle: "Near-misses \(result.nearMisses) • Time \(String(format: "%.1fs", result.duration))",
-                                              size: CGSize(width: min(view.bounds.width * 0.82, 320), height: 78),
-                                              icon: .trophy)
-        statsBadge.position = CGPoint(x: 0, y: headline.position.y - 80)
-        addChild(statsBadge)
-
-
-        let gemLabel = SKLabelNode(fontNamed: "Orbitron-Bold")
-        gemLabel.fontSize = 18
-        gemLabel.fontColor = GamePalette.cyan
-        gemLabel.horizontalAlignmentMode = .right
-        gemLabel.position = CGPoint(x: view.bounds.width * 0.42, y: logo.position.y + logo.size.height * 0.45)
-        gemLabel.text = "Gems: \(viewModel.currentGemBalance())"
-        gemLabel.alpha = 0
-        gemLabel.run(SKAction.sequence([SKAction.wait(forDuration: 0.4), SKAction.fadeIn(withDuration: 0.6)]))
-        addChild(gemLabel)
-        gemBalanceLabel = gemLabel
-        lastGemBalance = viewModel.currentGemBalance()
-
-        let badgeSize = CGSize(width: min(view.bounds.width * 0.82, 320), height: 78)
-        let statsBadge = assets.makeBadgeNode(title: "Score \(result.score)",
-                                              subtitle: "Near-misses \(result.nearMisses) • Time \(String(format: "%.1fs", result.duration))",
-                                              size: badgeSize,
-                                              icon: .trophy)
-        statsBadge.position = CGPoint(x: 0, y: headline.position.y - 80)
-        statsBadge.alpha = 0
-        statsBadge.run(SKAction.sequence([SKAction.wait(forDuration: 0.45), SKAction.fadeIn(withDuration: 0.6)]))
-        addChild(statsBadge)
-
-        var nextAnchor = statsBadge.position.y - badgeSize.height * 0.6
-        let eventsText = result.triggeredEvents.sorted().map { "#\($0)" }.joined(separator: " ")
-        if !eventsText.isEmpty {
-            let eventsLabel = SKLabelNode(text: "Moments unlocked: \(eventsText)")
-            eventsLabel.fontName = "SFProRounded-Bold"
-            eventsLabel.fontColor = GamePalette.neonMagenta
-            eventsLabel.fontSize = 16
-
-            eventsLabel.position = CGPoint(x: 0, y: statsBadge.position.y - badgeSize.height * 0.7)
-=======
-            eventsLabel.position = CGPoint(x: 0, y: statsBadge.position.y - 70)
-
-            addChild(eventsLabel)
-            nextAnchor = eventsLabel.position.y - 50
-        }
-
-
-        let buttonAnchor = nextAnchor - 20
-
-        shareButton = viewModel.makeButton(title: "Share Highlight", size: CGSize(width: 220, height: 60))
-        shareButton?.position = CGPoint(x: 0, y: buttonAnchor)
-        shareButton?.name = "share"
-        if let shareButton { addChild(shareButton) }
-
-        continueButton = viewModel.makeButton(title: "Watch to Continue", size: CGSize(width: 240, height: 60))
-        continueButton?.position = CGPoint(x: 0, y: (shareButton?.position.y ?? buttonAnchor) - 80)
-=======
-        shareButton = viewModel.makeButton(title: "Share Highlight", size: CGSize(width: 220, height: 60), icon: .share)
-        shareButton?.position = CGPoint(x: 0, y: -20)
-        shareButton?.name = "share"
-        if let shareButton { addChild(shareButton) }
-
-        continueButton = viewModel.makeButton(title: "Watch to Continue", size: CGSize(width: 240, height: 60), icon: .continue)
-        continueButton?.position = CGPoint(x: 0, y: shareButton?.position.y ?? -20 - 80)
-
-        continueButton?.name = "continue"
-        if let continueButton { addChild(continueButton) }
-
-        gemContinueButton = viewModel.makeButton(title: "Spend \(viewModel.gemReviveCost) Gems", size: CGSize(width: 260, height: 60))
-        gemContinueButton?.position = CGPoint(x: 0, y: (continueButton?.position.y ?? -100) - 80)
-        gemContinueButton?.name = "gem_continue"
-        if let gemContinueButton { addChild(gemContinueButton) }
-
-
-        retryButton = viewModel.makeButton(title: "Retry", size: CGSize(width: 180, height: 60))
-        retryButton?.position = CGPoint(x: 0, y: (gemContinueButton?.position.y ?? -160) - 80)
-=======
-        retryButton = viewModel.makeButton(title: "Retry", size: CGSize(width: 180, height: 60), icon: .retry)
-        retryButton?.position = CGPoint(x: 0, y: (continueButton?.position.y ?? -100) - 80)
-
-        retryButton?.name = "retry"
-        if let retryButton { addChild(retryButton) }
-
-        homeButton = viewModel.makeButton(title: "Home", size: CGSize(width: 160, height: 54), icon: .home)
-        homeButton?.position = CGPoint(x: 0, y: (retryButton?.position.y ?? -180) - 70)
-        homeButton?.name = "home"
-        if let homeButton { addChild(homeButton) }
-
-        let challenge = Challenge(targetScore: result.score)
-        let challengeLabel = SKLabelNode(text: "Challenge friends: \(challenge.generateLink())")
-        challengeLabel.fontName = "SFProRounded-Regular"
-        challengeLabel.fontColor = UIColor.white.withAlphaComponent(0.7)
-        challengeLabel.fontSize = 12
-        challengeLabel.position = CGPoint(x: 0, y: (homeButton?.position.y ?? -240) - 50)
-        addChild(challengeLabel)
-
-        let status = SKLabelNode(fontNamed: "SFProRounded-Bold")
-        status.fontSize = 16
-        status.fontColor = UIColor.white.withAlphaComponent(0.85)
-        status.alpha = 0
-        status.position = CGPoint(x: 0, y: challengeLabel.position.y - 40)
-        addChild(status)
-        monetizationStatusLabel = status
-
-        lastRewardedReady = viewModel.rewardedReady
-        updateRewardedAvailability()
-        updateGemButtonState()
+        configureBranding()
+        configureStats()
+        configureButtons()
+        refreshGemHUD()
+        updateRewardedState()
     }
 
-    public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let location = touches.first?.location(in: self) else { return }
-        let nodes = nodes(at: location)
-        if let share = shareButton, nodes.contains(share) || nodes.contains(where: { $0.name == "label" && $0.parent == share }) {
-            handleShare()
-        } else if let gem = gemContinueButton, nodes.contains(gem) || nodes.contains(where: { $0.name == "label" && $0.parent == gem }) {
-            handleGemContinue()
-        } else if let retry = retryButton, nodes.contains(retry) || nodes.contains(where: { $0.name == "label" && $0.parent == retry }) {
-            overDelegate?.gameOverSceneDidRequestRetry(self)
-        } else if let home = homeButton, nodes.contains(home) || nodes.contains(where: { $0.name == "label" && $0.parent == home }) {
-            overDelegate?.gameOverSceneDidReturnHome(self)
-        } else if let cont = continueButton, nodes.contains(cont) || nodes.contains(where: { $0.name == "label" && $0.parent == cont }) {
-            handleContinue()
+    public override func update(_ currentTime: TimeInterval) {
+        super.update(currentTime)
+        updateRewardedState()
+        refreshGemHUD()
+    }
+
+    private func configureBranding() {
+        let logoSize = CGSize(width: min(size.width * 0.6, 320), height: min(size.width * 0.6, 320) * 0.45)
+        let logo = assets.makeLogoNode(size: logoSize)
+        logo.position = CGPoint(x: 0, y: size.height * 0.3)
+        addChild(logo)
+
+        let status = SKLabelNode(fontNamed: "Orbitron-Bold")
+        status.fontSize = 22
+        status.fontColor = .white
+        status.position = CGPoint(x: 0, y: size.height * 0.18)
+        status.text = "Orbit destabilized!"
+        addChild(status)
+        statusLabel = status
+
+        let gemLabel = SKLabelNode(fontNamed: "SFProRounded-Regular")
+        gemLabel.fontSize = 16
+        gemLabel.fontColor = UIColor.white.withAlphaComponent(0.75)
+        gemLabel.position = CGPoint(x: 0, y: size.height * 0.12)
+        addChild(gemLabel)
+        gemBalanceLabel = gemLabel
+    }
+
+    private func configureStats() {
+        let badgeSize = CGSize(width: min(size.width * 0.75, 300), height: 72)
+        let summary = assets.makeBadgeNode(title: "Score \(result.score)",
+                                           subtitle: String(format: "%.0fs • %d near misses", result.duration, result.nearMisses),
+                                           size: badgeSize,
+                                           icon: .trophy)
+        summary.position = CGPoint(x: 0, y: size.height * 0.02)
+        addChild(summary)
+
+        let events = result.triggeredEvents.sorted()
+        if !events.isEmpty {
+            let subtitle = events.map(String.init).joined(separator: ", ")
+            let eventBadge = assets.makeBadgeNode(title: "Events",
+                                                  subtitle: "Triggered: \(subtitle)",
+                                                  size: badgeSize,
+                                                  icon: .power)
+            eventBadge.position = CGPoint(x: 0, y: -size.height * 0.08)
+            addChild(eventBadge)
+        }
+
+        if let challenge = result.challenge {
+            let subtitle = "Seed \(challenge.seed) • Beat \(challenge.targetScore)"
+            let challengeBadge = assets.makeBadgeNode(title: "Challenge",
+                                                      subtitle: subtitle,
+                                                      size: badgeSize,
+                                                      icon: .timer)
+            challengeBadge.position = CGPoint(x: 0, y: -size.height * 0.18)
+            addChild(challengeBadge)
+        }
+    }
+
+    private func configureButtons() {
+        let adButton = viewModel.makeButton(title: "Watch & Revive", size: CGSize(width: 240, height: 60), icon: .continue)
+        adButton.position = CGPoint(x: 0, y: -size.height * 0.22)
+        adButton.name = "continue_ad"
+        addChild(adButton)
+        continueAdButton = adButton
+
+        let gemButton = viewModel.makeButton(title: "Spend Gems (\(viewModel.gemReviveCost))", size: CGSize(width: 260, height: 60), icon: .gems)
+        gemButton.position = CGPoint(x: 0, y: -size.height * 0.32)
+        gemButton.name = "continue_gems"
+        addChild(gemButton)
+        continueGemButton = gemButton
+
+        let share = viewModel.makeButton(title: "Share Highlight", size: CGSize(width: 220, height: 56), icon: .share)
+        share.position = CGPoint(x: -size.width * 0.25, y: -size.height * 0.42)
+        share.name = "share"
+        addChild(share)
+        shareButton = share
+
+        let retry = viewModel.makeButton(title: "Retry", size: CGSize(width: 200, height: 56), icon: .retry)
+        retry.position = CGPoint(x: 0, y: -size.height * 0.42)
+        retry.name = "retry"
+        addChild(retry)
+        retryButton = retry
+
+        let home = viewModel.makeButton(title: "Home", size: CGSize(width: 180, height: 56), icon: .home)
+        home.position = CGPoint(x: size.width * 0.25, y: -size.height * 0.42)
+        home.name = "home"
+        addChild(home)
+        homeButton = home
+    }
+
+    private func updateRewardedState() {
+        let ready = viewModel.rewardedReady
+        if ready != lastRewardedReady {
+            continueAdButton?.alpha = ready ? 1.0 : 0.4
+            statusLabel?.text = ready ? "Revive available" : "Loading sponsor…"
+            lastRewardedReady = ready
+        }
+        continueGemButton?.alpha = viewModel.canAffordGemRevive() ? 1.0 : 0.4
+    }
+
+    private func refreshGemHUD() {
+        let balance = viewModel.currentGemBalance()
+        if balance != lastGemBalance {
+            gemBalanceLabel?.text = "Gems available: \(balance)"
+            lastGemBalance = balance
         }
     }
 
     private func handleShare() {
-        guard let view = view, let controller = view.window?.rootViewController else { return }
+        guard let controller = view?.window?.rootViewController else { return }
         viewModel.share(result: result, from: controller)
         overDelegate?.gameOverSceneDidFinishShare(self)
     }
 
-    private func handleContinue() {
-        guard let view = view, let controller = view.window?.rootViewController else { return }
-        guard viewModel.rewardedReady else {
-            showStatusMessage("Ad loading…", success: false)
-            viewModel.preloadRewarded()
-            return
-        }
-        continueButton?.alpha = 0.4
+    private func handleRewardedRevive() {
+        guard let controller = view?.window?.rootViewController else { return }
+        continueAdButton?.setPressed(true)
         viewModel.showRewarded(from: controller) { [weak self] result in
             guard let self else { return }
+            self.continueAdButton?.setPressed(false)
             switch result {
             case .success:
-                self.showStatusMessage("Revived via ad!", success: true)
                 self.overDelegate?.gameOverSceneDidRequestRevive(self)
             case .failure:
-                self.showStatusMessage("Ad unavailable. Try again soon.", success: false)
+                self.statusLabel?.text = "Sponsor unavailable"
             }
-            self.updateRewardedAvailability()
         }
     }
 
-    private func handleGemContinue() {
+    private func handleGemRevive() {
         guard viewModel.canAffordGemRevive() else {
-            showStatusMessage("Need \(viewModel.gemReviveCost) gems to revive.", success: false)
+            statusLabel?.text = "Earn more gems to revive"
             return
         }
         if viewModel.spendGemsForRevive() {
-            updateGemBalanceIfNeeded()
-            updateGemButtonState()
-            showStatusMessage("Revived for \(viewModel.gemReviveCost) gems!", success: true)
+            refreshGemHUD()
             overDelegate?.gameOverSceneDidRequestRevive(self)
-        } else {
-            showStatusMessage("Gem spend failed.", success: false)
         }
     }
 
-    private func updateGemBalanceIfNeeded() {
-        let balance = viewModel.currentGemBalance()
-        if balance != lastGemBalance {
-            lastGemBalance = balance
-            gemBalanceLabel?.text = "Gems: \(balance)"
+    // MARK: - Touch Handling
+
+    public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let point = touches.first?.location(in: self) else { return }
+        button(at: point)?.setPressed(true)
+    }
+
+    public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let point = touches.first?.location(in: self) else { return }
+        let target = button(at: point)
+        [shareButton, continueAdButton, continueGemButton, retryButton, homeButton].forEach { $0?.setPressed(false) }
+
+        if target === shareButton {
+            handleShare()
+            return
+        }
+        if target === continueAdButton {
+            handleRewardedRevive()
+            return
+        }
+        if target === continueGemButton {
+            handleGemRevive()
+            return
+        }
+        if target === retryButton {
+            overDelegate?.gameOverSceneDidRequestRetry(self)
+            return
+        }
+        if target === homeButton {
+            overDelegate?.gameOverSceneDidReturnHome(self)
         }
     }
 
-    private func updateGemButtonState() {
-        let enabled = viewModel.canAffordGemRevive()
-        gemContinueButton?.alpha = enabled ? 1.0 : 0.4
+    public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        [shareButton, continueAdButton, continueGemButton, retryButton, homeButton].forEach { $0?.setPressed(false) }
     }
 
-    private func updateRewardedAvailability() {
-        let ready = viewModel.rewardedReady
-        if ready != lastRewardedReady {
-            continueButton?.alpha = ready ? 1.0 : 0.4
-            lastRewardedReady = ready
-        }
-    }
-
-    private func showStatusMessage(_ text: String, success: Bool) {
-        guard let label = monetizationStatusLabel else { return }
-        label.removeAllActions()
-        label.text = text
-        label.fontColor = success ? GamePalette.cyan : UIColor.systemRed
-        label.alpha = 1.0
-        statusMessageRemaining = 2.5
-    }
-
-    public override func update(_ currentTime: TimeInterval) {
-        updateRewardedAvailability()
-        updateGemButtonState()
-        updateGemBalanceIfNeeded()
-        let delta: TimeInterval
-        if lastUpdateTime == 0 {
-            delta = 0
-        } else {
-            delta = currentTime - lastUpdateTime
-        }
-        lastUpdateTime = currentTime
-        if statusMessageRemaining > 0 {
-            statusMessageRemaining = max(0, statusMessageRemaining - delta)
-        }
-        if statusMessageRemaining == 0, let label = monetizationStatusLabel, label.alpha > 0 {
-            label.run(SKAction.fadeOut(withDuration: 0.25))
-            statusMessageRemaining = -1
-        }
-        if let view = view, let emitter = meteorEmitter {
-            emitter.position.x -= CGFloat(delta * 40)
-            if emitter.position.x < -view.bounds.width * 0.35 {
-                emitter.position.x = view.bounds.width * 0.35
-            }
-        }
+    private func button(at point: CGPoint) -> SKSpriteNode? {
+        [shareButton, continueAdButton, continueGemButton, retryButton, homeButton].compactMap { $0 }.first(where: { $0.contains(point) })
     }
 }

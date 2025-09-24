@@ -1,10 +1,38 @@
 import Foundation
 import SpriteKit
 
+public enum PowerUpType: String, Codable, CaseIterable {
+    case shield
+    case slowMo
+    case magnet
+
+    public var displayName: String {
+        switch self {
+        case .shield:
+            return "Shield"
+        case .slowMo:
+            return "Slow-Mo"
+        case .magnet:
+            return "Magnet"
+        }
+    }
+}
+
 public enum PowerUp: CustomStringConvertible, Codable {
     case shield(duration: TimeInterval)
     case slowMo(factor: CGFloat, duration: TimeInterval)
     case magnet(strength: CGFloat, duration: TimeInterval)
+
+    public var type: PowerUpType {
+        switch self {
+        case .shield:
+            return .shield
+        case .slowMo:
+            return .slowMo
+        case .magnet:
+            return .magnet
+        }
+    }
 
     public var description: String {
         switch self {
@@ -17,114 +45,86 @@ public enum PowerUp: CustomStringConvertible, Codable {
         }
     }
 
-    public var type: PowerUpType {
-        switch self {
-        case .shield:
-            return .shield
-        case .slowMo:
-            return .slowMo
-        case .magnet:
-            return .magnet
-        }
+    public var slowFactor: CGFloat? {
+        if case let .slowMo(factor, _) = self { return factor }
+        return nil
+    }
+
+    public var magnetStrength: CGFloat? {
+        if case let .magnet(strength, _) = self { return strength }
+        return nil
     }
 }
 
-public enum PowerUpType: String, Codable {
-    case shield
-    case slowMo
-    case magnet
-}
-
-private struct ActivePowerup {
-    let type: PowerUp
+private struct ActivePowerUpEntry {
+    let powerUp: PowerUp
     let expiresAt: TimeInterval
 }
 
-public protocol PowerupManaging {
+public protocol PowerupManaging: AnyObject {
     func activate(_ powerUp: PowerUp, currentTime: TimeInterval)
     func isActive(_ type: PowerUpType, currentTime: TimeInterval) -> Bool
     func currentPowerUp(of type: PowerUpType) -> PowerUp?
-    func update(currentTime: TimeInterval)
     func timeRemaining(for type: PowerUpType, currentTime: TimeInterval) -> TimeInterval?
-    var activeTypes: [PowerUpType] { get }
+    func update(currentTime: TimeInterval)
     func deactivate(_ type: PowerUpType)
     func reset()
+    var activeTypes: [PowerUpType] { get }
 }
 
 public final class PowerupManager: PowerupManaging {
-    private var active: [ActivePowerup] = []
+    private var active: [ActivePowerUpEntry] = []
 
     public init() {}
 
     public func activate(_ powerUp: PowerUp, currentTime: TimeInterval) {
         let duration: TimeInterval
         switch powerUp {
-        case let .shield(d):
-            duration = d
-        case let .slowMo(_, d):
-            duration = d
-        case let .magnet(_, d):
-            duration = d
+        case let .shield(durationValue):
+            duration = durationValue
+        case let .slowMo(_, durationValue):
+            duration = durationValue
+        case let .magnet(_, durationValue):
+            duration = durationValue
         }
-        let activePowerup = ActivePowerup(type: powerUp, expiresAt: currentTime + duration)
-        active.removeAll { $0.type.type == powerUp.type }
-        active.append(activePowerup)
+
+        active.removeAll { $0.powerUp.type == powerUp.type }
+        let entry = ActivePowerUpEntry(powerUp: powerUp, expiresAt: currentTime + duration)
+        active.append(entry)
     }
 
     public func isActive(_ type: PowerUpType, currentTime: TimeInterval) -> Bool {
-        active.contains { $0.type.type == type && currentTime < $0.expiresAt }
-    }
-
-    public func update(currentTime: TimeInterval) {
-        active.removeAll { currentTime >= $0.expiresAt }
-    }
-
-    public func timeRemaining(for type: PowerUpType, currentTime: TimeInterval) -> TimeInterval? {
-        guard let entry = active.first(where: { $0.type.type == type }) else { return nil }
-        return max(0, entry.expiresAt - currentTime)
-    }
-
-    public var activeTypes: [PowerUpType] {
-        active.map { $0.type.type }
+        cleanupExpired(currentTime: currentTime)
+        return active.contains { $0.powerUp.type == type }
     }
 
     public func currentPowerUp(of type: PowerUpType) -> PowerUp? {
-        active.first { $0.type.type == type }?.type
+        active.first { $0.powerUp.type == type }?.powerUp
+    }
+
+    public func timeRemaining(for type: PowerUpType, currentTime: TimeInterval) -> TimeInterval? {
+        cleanupExpired(currentTime: currentTime)
+        guard let entry = active.first(where: { $0.powerUp.type == type }) else { return nil }
+        return max(0, entry.expiresAt - currentTime)
+    }
+
+    public func update(currentTime: TimeInterval) {
+        cleanupExpired(currentTime: currentTime)
+    }
+
+    public func deactivate(_ type: PowerUpType) {
+        active.removeAll { $0.powerUp.type == type }
     }
 
     public func reset() {
         active.removeAll(keepingCapacity: false)
-
-    public func deactivate(_ type: PowerUpType) {
-        active.removeAll { $0.type.type == type }
     }
 
-    public func reset() {
-        active.removeAll()
-    }
-}
-
-public extension PowerUpType {
-    var displayName: String {
-        switch self {
-        case .shield:
-            return "Shield"
-        case .slowMo:
-            return "Slow-Mo"
-        case .magnet:
-            return "Magnet"
-        }
-    }
-}
-
-public extension PowerUp {
-    var slowFactor: CGFloat? {
-        if case let .slowMo(factor, _) = self { return factor }
-        return nil
+    public var activeTypes: [PowerUpType] {
+        active.map { $0.powerUp.type }
     }
 
-    var magnetStrength: CGFloat? {
-        if case let .magnet(strength, _) = self { return strength }
-        return nil
+    private func cleanupExpired(currentTime: TimeInterval) {
+        active.removeAll { currentTime >= $0.expiresAt }
     }
 }
