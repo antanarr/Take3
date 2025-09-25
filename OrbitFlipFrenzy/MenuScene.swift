@@ -6,6 +6,7 @@ public protocol MenuSceneDelegate: AnyObject {
     func menuSceneDidStartGame(_ scene: MenuScene)
     func menuScene(_ scene: MenuScene, didSelectProduct name: String)
     func menuSceneDidRequestRestore(_ scene: MenuScene)
+    func menuScene(_ scene: MenuScene, didRequestLegal document: LegalDocument)
 }
 
 public final class MenuScene: SKScene {
@@ -181,11 +182,7 @@ public final class MenuScene: SKScene {
     private var shopToggleButton: SKSpriteNode?
     private var shopVisible = false
     private var currentStreak: DailyStreak?
-    private var legalButton: SKSpriteNode?
-    private var privacyButton: SKSpriteNode?
-    private var legalOverlay: SKSpriteNode?
-    private var legalPanel: SKShapeNode?
-    private var legalCloseButton: SKSpriteNode?
+
 
     public init(size: CGSize, viewModel: ViewModel, assets: AssetGenerating) {
         self.viewModel = viewModel
@@ -275,21 +272,34 @@ public final class MenuScene: SKScene {
         addChild(restore)
         restoreButton = restore
 
-        let legal = assets.makeButtonNode(text: "Terms", size: CGSize(width: 150, height: 52), icon: .info)
-        legal.position = CGPoint(x: -size.width * 0.28, y: -size.height * 0.46)
-        legal.alpha = 0.9
-        legal.name = "terms"
-        addChild(legal)
-        legalButton = legal
-
-        let privacy = assets.makeButtonNode(text: "Privacy", size: CGSize(width: 150, height: 52), icon: .info)
-        privacy.position = CGPoint(x: size.width * 0.28, y: -size.height * 0.46)
-        privacy.alpha = 0.9
-        privacy.name = "privacy"
-        addChild(privacy)
-        privacyButton = privacy
 
         updateShopToggleTitle()
+    }
+
+    private func configureLegalButtons() {
+        legalButtons.forEach { $0.node.removeFromParent() }
+        legalButtons.removeAll()
+
+        let buttonSize = CGSize(width: 170, height: 54)
+        let spacing: CGFloat = 24
+        let documents = LegalDocument.allCases
+        guard !documents.isEmpty else { return }
+
+        let totalWidth = CGFloat(documents.count) * buttonSize.width + CGFloat(documents.count - 1) * spacing
+        var currentX = -totalWidth / 2 + buttonSize.width / 2
+        let desiredY = -size.height * 0.49
+        let bottomMargin = (-size.height / 2) + (buttonSize.height / 2) + 16
+        let yPosition = max(desiredY, bottomMargin)
+
+        for document in documents {
+            let node = assets.makeButtonNode(text: document.buttonTitle, size: buttonSize, icon: nil)
+            node.position = CGPoint(x: currentX, y: yPosition)
+            node.alpha = 0.85
+            node.name = "legal_\(document.buttonTitle.lowercased())"
+            addChild(node)
+            legalButtons.append(LegalButton(node: node, document: document))
+            currentX += buttonSize.width + spacing
+        }
     }
 
     private func layoutProducts() {
@@ -577,6 +587,7 @@ public final class MenuScene: SKScene {
 
         [startButton, shopToggleButton, legalButton, privacyButton].forEach { $0?.setPressed(false) }
         productNodes.compactMap { $0 as? SKSpriteNode }.forEach { $0.setPressed(false) }
+        legalButtons.forEach { $0.node.setPressed(false) }
 
         if let button = startButton, button.contains(location) {
             viewModel.startTapped()
@@ -595,15 +606,7 @@ public final class MenuScene: SKScene {
             return
         }
 
-        if let legal = legalButton, legal.contains(location) {
-            legal.setPressed(false)
-            presentLegalDocument(.terms)
-            return
-        }
 
-        if let privacy = privacyButton, privacy.contains(location) {
-            privacy.setPressed(false)
-            presentLegalDocument(.privacy)
             return
         }
 
@@ -620,13 +623,13 @@ public final class MenuScene: SKScene {
         }
         [startButton, shopToggleButton, legalButton, privacyButton].forEach { $0?.setPressed(false) }
         productNodes.compactMap { $0 as? SKSpriteNode }.forEach { $0.setPressed(false) }
+        legalButtons.forEach { $0.node.setPressed(false) }
     }
 
     private func interactiveButton(at location: CGPoint) -> SKSpriteNode? {
         if let start = startButton, start.contains(location) { return start }
         if let toggle = shopToggleButton, !toggle.isHidden, toggle.contains(location) { return toggle }
-        if let legal = legalButton, legal.contains(location) { return legal }
-        if let privacy = privacyButton, privacy.contains(location) { return privacy }
+
         for case let node as SKSpriteNode in productNodes where shopVisible && !node.isHidden && node.contains(location) {
             return node
         }

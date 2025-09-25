@@ -95,6 +95,10 @@ extension GameViewController: MenuSceneDelegate {
     func menuSceneDidRequestRestore(_ scene: MenuScene) {
         container.restorePurchases(from: self)
     }
+
+    func menuScene(_ scene: MenuScene, didRequestLegal document: LegalDocument) {
+        container.presentLegal(document: document, from: self)
+    }
 }
 
 extension GameViewController: GameSceneDelegate {
@@ -204,6 +208,15 @@ private final class DependencyContainer {
 
     func restorePurchases(from controller: UIViewController) {
         purchases.presentRestorePurchases(from: controller)
+    }
+
+    func presentLegal(document: LegalDocument, from controller: UIViewController) {
+        let legal = LegalViewController(document: document)
+        let navigation = UINavigationController(rootViewController: legal)
+        navigation.modalPresentationStyle = .formSheet
+        navigation.navigationBar.tintColor = GamePalette.cyan
+        navigation.navigationBar.prefersLargeTitles = false
+        controller.present(navigation, animated: true)
     }
 }
 
