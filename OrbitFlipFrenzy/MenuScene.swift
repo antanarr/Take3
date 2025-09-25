@@ -6,6 +6,7 @@ public protocol MenuSceneDelegate: AnyObject {
     func menuSceneDidStartGame(_ scene: MenuScene)
     func menuScene(_ scene: MenuScene, didSelectProduct name: String)
     func menuSceneDidRequestRestore(_ scene: MenuScene)
+    func menuScene(_ scene: MenuScene, didRequestLegal document: LegalDocument)
 }
 
 public final class MenuScene: SKScene {
@@ -150,6 +151,12 @@ public final class MenuScene: SKScene {
     private var shopToggleButton: SKSpriteNode?
     private var shopVisible = false
     private var currentStreak: DailyStreak?
+    private var legalButtons: [LegalButton] = []
+
+    private struct LegalButton {
+        let node: SKSpriteNode
+        let document: LegalDocument
+    }
 
     public init(size: CGSize, viewModel: ViewModel, assets: AssetGenerating) {
         self.viewModel = viewModel
@@ -239,7 +246,34 @@ public final class MenuScene: SKScene {
         addChild(restore)
         restoreButton = restore
 
+        configureLegalButtons()
         updateShopToggleTitle()
+    }
+
+    private func configureLegalButtons() {
+        legalButtons.forEach { $0.node.removeFromParent() }
+        legalButtons.removeAll()
+
+        let buttonSize = CGSize(width: 170, height: 54)
+        let spacing: CGFloat = 24
+        let documents = LegalDocument.allCases
+        guard !documents.isEmpty else { return }
+
+        let totalWidth = CGFloat(documents.count) * buttonSize.width + CGFloat(documents.count - 1) * spacing
+        var currentX = -totalWidth / 2 + buttonSize.width / 2
+        let desiredY = -size.height * 0.49
+        let bottomMargin = (-size.height / 2) + (buttonSize.height / 2) + 16
+        let yPosition = max(desiredY, bottomMargin)
+
+        for document in documents {
+            let node = assets.makeButtonNode(text: document.buttonTitle, size: buttonSize, icon: nil)
+            node.position = CGPoint(x: currentX, y: yPosition)
+            node.alpha = 0.85
+            node.name = "legal_\(document.buttonTitle.lowercased())"
+            addChild(node)
+            legalButtons.append(LegalButton(node: node, document: document))
+            currentX += buttonSize.width + spacing
+        }
     }
 
     private func layoutProducts() {
@@ -405,6 +439,7 @@ public final class MenuScene: SKScene {
         guard let location = touches.first?.location(in: self) else { return }
         [startButton, shopToggleButton].forEach { $0?.setPressed(false) }
         productNodes.compactMap { $0 as? SKSpriteNode }.forEach { $0.setPressed(false) }
+        legalButtons.forEach { $0.node.setPressed(false) }
 
         if let button = startButton, button.contains(location) {
             viewModel.startTapped()
@@ -423,6 +458,11 @@ public final class MenuScene: SKScene {
             return
         }
 
+        if let legal = legalButtons.first(where: { $0.node.contains(location) }) {
+            menuDelegate?.menuScene(self, didRequestLegal: legal.document)
+            return
+        }
+
         if shopVisible, let product = productNodes.first(where: { !$0.isHidden && $0.contains(location) }) {
             menuDelegate?.menuScene(self, didSelectProduct: product.name ?? "")
             return
@@ -432,11 +472,15 @@ public final class MenuScene: SKScene {
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         [startButton, shopToggleButton].forEach { $0?.setPressed(false) }
         productNodes.compactMap { $0 as? SKSpriteNode }.forEach { $0.setPressed(false) }
+        legalButtons.forEach { $0.node.setPressed(false) }
     }
 
     private func interactiveButton(at location: CGPoint) -> SKSpriteNode? {
         if let start = startButton, start.contains(location) { return start }
         if let toggle = shopToggleButton, !toggle.isHidden, toggle.contains(location) { return toggle }
+        for legal in legalButtons where legal.node.contains(location) {
+            return legal.node
+        }
         for case let node as SKSpriteNode in productNodes where shopVisible && !node.isHidden && node.contains(location) {
             return node
         }
