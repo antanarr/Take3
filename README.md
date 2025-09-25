@@ -3,7 +3,6 @@
 
 This repository contains the Swift/SpriteKit implementation of **Orbit Flip Frenzy**, an iOS arcade title generated entirely from code. The goal of this README is to track follow-up tasks by discipline after reviewing the shipped code.
 
-=======
 
 ## Programmatic asset coverage
 
@@ -343,7 +342,6 @@ Every phase of the 60-second loop now reinforces “one more run” without cras
 - Extend automated test coverage around the new confirm flows, magnet interactions, and challenge deep links.
 - Continue tuning audio and color polish now that the systemic blockers are closed.
 
-### Deferred
 - None – Phase 5–7 acceptance criteria are fully implemented.
 
 
@@ -367,4 +365,5 @@ Every phase of the 60-second loop now reinforces “one more run” without cras
 - HUD gating keeps premium currency and shield spend buttons hidden until the player finishes onboarding or can afford them.
 - Gem revives require a two-tap confirmation inside a grace window so premium spends are reversible if the player hesitates.
 - Share completion waits on the activity controller callback and records cancel vs. success distinctly for honest analytics.
+
 
