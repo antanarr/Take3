@@ -11,6 +11,37 @@ public protocol MenuSceneDelegate: AnyObject {
 
 public final class MenuScene: SKScene {
 
+    private enum LegalDocument {
+        case terms
+        case privacy
+
+        var title: String {
+            switch self {
+            case .terms: return "Terms of Use"
+            case .privacy: return "Privacy Policy"
+            }
+        }
+
+        var sections: [(title: String, body: String)] {
+            switch self {
+            case .terms:
+                return [
+                    ("Overview", "Orbital Flip Frenzy is published by HyperNova Labs. Playing the game means you accept these Terms and confirm you are at least 13 years old or have guardian permission."),
+                    ("Player Responsibilities", "Use the app only for personal entertainment. Do not exploit bugs, harass other players, or attempt to reverse engineer or redistribute the software."),
+                    ("Purchases & Ads", "All in-app purchases are optional. Virtual currency and items have no real-world value and are non-refundable except where required by law. Rewarded ads are simulated and never collect personal data."),
+                    ("Health & Contact", "Play safely and stop if you feel discomfort, dizziness, or eye strain. For support email support@orbitflipfrenzy.fake. These Terms are governed by the laws of your local jurisdiction.")
+                ]
+            case .privacy:
+                return [
+                    ("Data We Collect", "The game stores high scores, achievements, and remote configuration locally on your device. No personal identifiers are transmitted."),
+                    ("How Data Is Used", "Anonymous gameplay metrics are used to tune difficulty, power-up balance, and monetisation pacing. Remote config tokens secure analytics batching."),
+                    ("Your Choices", "You can reset saved progress at any time from the settings menu to delete stored data. Uninstalling the app removes all locally stored information."),
+                    ("Contact & Updates", "For privacy requests email privacy@orbitflipfrenzy.fake. We will notify players in-app before making material changes to this policy.")
+                ]
+            }
+        }
+    }
+
     public final class ViewModel {
         struct DisplayProduct {
             let title: String
@@ -151,12 +182,7 @@ public final class MenuScene: SKScene {
     private var shopToggleButton: SKSpriteNode?
     private var shopVisible = false
     private var currentStreak: DailyStreak?
-    private var legalButtons: [LegalButton] = []
 
-    private struct LegalButton {
-        let node: SKSpriteNode
-        let document: LegalDocument
-    }
 
     public init(size: CGSize, viewModel: ViewModel, assets: AssetGenerating) {
         self.viewModel = viewModel
@@ -246,7 +272,7 @@ public final class MenuScene: SKScene {
         addChild(restore)
         restoreButton = restore
 
-        configureLegalButtons()
+
         updateShopToggleTitle()
     }
 
@@ -428,16 +454,138 @@ public final class MenuScene: SKScene {
         }
     }
 
+    private func presentLegalDocument(_ document: LegalDocument) {
+        dismissLegalOverlay(animated: false)
+
+        let overlay = SKSpriteNode(color: UIColor.black.withAlphaComponent(0.6), size: size)
+        overlay.zPosition = 50
+        overlay.position = .zero
+        overlay.alpha = 0.0
+        addChild(overlay)
+        overlay.run(SKAction.fadeAlpha(to: 1.0, duration: 0.25))
+        legalOverlay = overlay
+
+        let panelSize = CGSize(width: min(size.width * 0.85, 340), height: min(size.height * 0.72, 520))
+        let panel = SKShapeNode(rectOf: panelSize, cornerRadius: 28)
+        panel.fillColor = GamePalette.royalBlue.withAlphaComponent(0.95)
+        panel.strokeColor = GamePalette.cyan.withAlphaComponent(0.8)
+        panel.lineWidth = 4
+        panel.position = .zero
+        panel.zPosition = 1
+        panel.name = "legal_panel"
+        overlay.addChild(panel)
+        legalPanel = panel
+
+        let titleLabel = SKLabelNode(fontNamed: "Orbitron-Bold")
+        titleLabel.text = document.title
+        titleLabel.fontSize = 26
+        titleLabel.fontColor = .white
+        titleLabel.position = CGPoint(x: 0, y: panelSize.height * 0.38)
+        titleLabel.zPosition = 2
+        panel.addChild(titleLabel)
+
+        var currentY = panelSize.height * 0.28
+        for section in document.sections {
+            let heading = SKLabelNode(fontNamed: "Orbitron-Bold")
+            heading.text = section.title
+            heading.fontSize = 16
+            heading.fontColor = GamePalette.solarGold
+            heading.horizontalAlignmentMode = .center
+            heading.position = CGPoint(x: 0, y: currentY)
+            heading.zPosition = 2
+            panel.addChild(heading)
+            currentY -= heading.fontSize * 1.4
+
+            let bodyLines = wrapText(section.body, maxCharacters: 42)
+            for line in bodyLines {
+                let body = SKLabelNode(fontNamed: "SFProRounded-Regular")
+                body.text = line
+                body.fontSize = 13
+                body.fontColor = UIColor.white.withAlphaComponent(0.9)
+                body.horizontalAlignmentMode = .center
+                body.position = CGPoint(x: 0, y: currentY)
+                body.zPosition = 2
+                panel.addChild(body)
+                currentY -= body.fontSize * 1.45
+            }
+
+            currentY -= 8
+        }
+
+        let close = assets.makeButtonNode(text: "Close", size: CGSize(width: 160, height: 54), icon: .alert)
+        close.position = CGPoint(x: 0, y: -panelSize.height * 0.42)
+        close.alpha = 0.95
+        close.zPosition = 2
+        overlay.addChild(close)
+        legalCloseButton = close
+    }
+
+    private func dismissLegalOverlay(animated: Bool = true) {
+        guard let overlay = legalOverlay else { return }
+        legalCloseButton?.setPressed(false)
+        let cleanup = { [weak self] in
+            overlay.removeFromParent()
+            self?.legalOverlay = nil
+            self?.legalPanel = nil
+            self?.legalCloseButton = nil
+        }
+        if animated {
+            overlay.run(SKAction.sequence([SKAction.fadeOut(withDuration: 0.2), SKAction.run(cleanup)]))
+        } else {
+            overlay.removeAllActions()
+            cleanup()
+        }
+    }
+
+    private func wrapText(_ text: String, maxCharacters: Int) -> [String] {
+        let words = text.split(separator: " ")
+        guard !words.isEmpty else { return [] }
+        var lines: [String] = []
+        var currentLine = ""
+        for word in words {
+            if currentLine.isEmpty {
+                currentLine = String(word)
+            } else if (currentLine.count + word.count + 1) <= maxCharacters {
+                currentLine += " " + word
+            } else {
+                lines.append(currentLine)
+                currentLine = String(word)
+            }
+        }
+        if !currentLine.isEmpty { lines.append(currentLine) }
+        return lines
+    }
+
     // MARK: - Touch Handling
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let location = touches.first?.location(in: self) else { return }
+        if let overlay = legalOverlay, let close = legalCloseButton {
+            let overlayPoint = convert(location, to: overlay)
+            if close.contains(overlayPoint) {
+                close.setPressed(true)
+            }
+            return
+        }
         interactiveButton(at: location)?.setPressed(true)
     }
 
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let location = touches.first?.location(in: self) else { return }
-        [startButton, shopToggleButton].forEach { $0?.setPressed(false) }
+        if let overlay = legalOverlay {
+            let point = convert(location, to: overlay)
+            if let close = legalCloseButton, close.contains(point) {
+                close.setPressed(false)
+                dismissLegalOverlay()
+            } else if let panel = legalPanel, !panel.contains(point) {
+                dismissLegalOverlay()
+            } else {
+                legalCloseButton?.setPressed(false)
+            }
+            return
+        }
+
+        [startButton, shopToggleButton, legalButton, privacyButton].forEach { $0?.setPressed(false) }
         productNodes.compactMap { $0 as? SKSpriteNode }.forEach { $0.setPressed(false) }
         legalButtons.forEach { $0.node.setPressed(false) }
 
@@ -458,8 +606,7 @@ public final class MenuScene: SKScene {
             return
         }
 
-        if let legal = legalButtons.first(where: { $0.node.contains(location) }) {
-            menuDelegate?.menuScene(self, didRequestLegal: legal.document)
+
             return
         }
 
@@ -470,7 +617,11 @@ public final class MenuScene: SKScene {
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        [startButton, shopToggleButton].forEach { $0?.setPressed(false) }
+        if legalOverlay != nil {
+            legalCloseButton?.setPressed(false)
+            return
+        }
+        [startButton, shopToggleButton, legalButton, privacyButton].forEach { $0?.setPressed(false) }
         productNodes.compactMap { $0 as? SKSpriteNode }.forEach { $0.setPressed(false) }
         legalButtons.forEach { $0.node.setPressed(false) }
     }
@@ -478,9 +629,7 @@ public final class MenuScene: SKScene {
     private func interactiveButton(at location: CGPoint) -> SKSpriteNode? {
         if let start = startButton, start.contains(location) { return start }
         if let toggle = shopToggleButton, !toggle.isHidden, toggle.contains(location) { return toggle }
-        for legal in legalButtons where legal.node.contains(location) {
-            return legal.node
-        }
+
         for case let node as SKSpriteNode in productNodes where shopVisible && !node.isHidden && node.contains(location) {
             return node
         }
