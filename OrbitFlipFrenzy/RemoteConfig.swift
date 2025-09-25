@@ -69,7 +69,8 @@ public final class RemoteConfigManager: RemoteConfigProviding {
 
     private let endpoint: URL
     private let session: URLSession
-    private let queue = DispatchQueue(label: "com.orbitflip.remoteconfig", qos: .utility)
+    private let queue: DispatchQueue
+    private let queueSpecificKey = DispatchSpecificKey<Void>()
     private var observers: [UUID: () -> Void] = [:]
     private var activeConfig: ActiveConfig
     private let storageURL: URL
@@ -79,6 +80,8 @@ public final class RemoteConfigManager: RemoteConfigProviding {
                 fileManager: FileManager = .default) {
         self.endpoint = endpoint
         self.session = session
+        self.queue = DispatchQueue(label: "com.orbitflip.remoteconfig", qos: .utility)
+        self.queue.setSpecific(key: queueSpecificKey, value: ())
         let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first ?? fileManager.temporaryDirectory
         self.storageURL = caches.appendingPathComponent("remote_config.json")
         self.activeConfig = ActiveConfig(overrides: [:],
@@ -167,48 +170,65 @@ public final class RemoteConfigManager: RemoteConfigProviding {
         guard let data = try? Data(contentsOf: storageURL) else { return }
         do {
             let payload = try JSONDecoder().decode(Payload.self, from: data)
-            apply(payload)
+            apply(payload, asynchronously: false)
         } catch {
             // Ignore cached decode errors
         }
     }
 
-    private func apply(_ payload: Payload) {
-        queue.async { [weak self] in
-            guard let self else { return }
-            var overrides: [ProductID: ActiveConfig.ProductOverride] = [:]
-            var lookup = RemoteConfigManager.makeDefaultStoreLookup()
-            if let products = payload.products {
-                for product in products {
-                    guard let productID = ProductID.fromConfigKey(product.canonicalID) else { continue }
-                    let override = ActiveConfig.ProductOverride(storeIdentifier: product.storeIdentifier,
-                                                                 marketingMessage: product.marketingMessage,
-                                                                 badge: product.badge,
-                                                                 highlight: product.highlight ?? false,
-                                                                 priceOverride: product.priceOverride)
-                    overrides[productID] = override
-                    if let storeIdentifier = product.storeIdentifier {
-                        lookup[storeIdentifier] = productID
-                    }
+    private func apply(_ payload: Payload, asynchronously: Bool = true) {
+        let newConfig = makeActiveConfig(from: payload)
+        let applyBlock: @Sendable () -> Void = { [weak self] in
+            self?.apply(config: newConfig)
+        }
+
+        if asynchronously {
+            queue.async(execute: applyBlock)
+        } else if DispatchQueue.getSpecific(key: queueSpecificKey) != nil {
+            applyBlock()
+        } else {
+            queue.sync(execute: applyBlock)
+        }
+    }
+
+    private func makeActiveConfig(from payload: Payload) -> ActiveConfig {
+        var overrides: [ProductID: ActiveConfig.ProductOverride] = [:]
+        var lookup = RemoteConfigManager.makeDefaultStoreLookup()
+        if let products = payload.products {
+            for product in products {
+                guard let productID = ProductID.fromConfigKey(product.canonicalID) else { continue }
+                let override = ActiveConfig.ProductOverride(storeIdentifier: product.storeIdentifier,
+                                                             marketingMessage: product.marketingMessage,
+                                                             badge: product.badge,
+                                                             highlight: product.highlight ?? false,
+                                                             priceOverride: product.priceOverride)
+                overrides[productID] = override
+                if let storeIdentifier = product.storeIdentifier {
+                    lookup[storeIdentifier] = productID
                 }
             }
-            let hero: ProductID?
-            if let heroKey = payload.offers?.heroProduct {
-                hero = ProductID.fromConfigKey(heroKey)
-            } else {
-                hero = nil
-            }
-            let cooldown = payload.offers?.starterPackCooldownHours ?? 24
-            let analyticsToken = payload.analytics?.authToken
-            let batchSize = max(1, payload.analytics?.batchSize ?? 5)
-            self.activeConfig = ActiveConfig(overrides: overrides,
-                                             storeLookup: lookup,
-                                             heroProduct: hero,
-                                             starterPackCooldownHours: cooldown,
-                                             analyticsAuthToken: analyticsToken,
-                                             analyticsBatchSize: batchSize)
-            self.notifyObservers()
         }
+        let hero: ProductID?
+        if let heroKey = payload.offers?.heroProduct {
+            hero = ProductID.fromConfigKey(heroKey)
+        } else {
+            hero = nil
+        }
+        let cooldown = payload.offers?.starterPackCooldownHours ?? 24
+        let analyticsToken = payload.analytics?.authToken
+        let batchSize = max(1, payload.analytics?.batchSize ?? 5)
+
+        return ActiveConfig(overrides: overrides,
+                            storeLookup: lookup,
+                            heroProduct: hero,
+                            starterPackCooldownHours: cooldown,
+                            analyticsAuthToken: analyticsToken,
+                            analyticsBatchSize: batchSize)
+    }
+
+    private func apply(config: ActiveConfig) {
+        activeConfig = config
+        notifyObservers()
     }
 
     private func notifyObservers() {
