@@ -37,11 +37,20 @@ public final class GameOverScene: SKScene {
             assets.makeButtonNode(text: title, size: size, icon: icon)
         }
 
-        func share(result: GameResult, from controller: UIViewController) {
+        func share(result: GameResult,
+                   from controller: UIViewController,
+                   completion: @escaping (UIActivity.ActivityType?) -> Void,
+                   cancel: @escaping () -> Void) {
             analytics.track(.shareInitiated)
             var message = "I flipped out at \(result.score)! 🚀"
-            if let challenge = result.challenge, let link = challenge.generateLink() {
-                message += " Beat it: \(link.absoluteString)"
+            var challengeBundle: ChallengeLinkBundle?
+            if let challenge = result.challenge {
+                challengeBundle = challenge.generateLinkBundle()
+                if let bundle = challengeBundle {
+                    message += " Beat it: \(bundle.universalLink.absoluteString)"
+                } else if let link = challenge.generateLink() {
+                    message += " Beat it: \(link.absoluteString)"
+                }
             }
             var items: [Any] = [message]
             if let data = result.replayData {
@@ -50,10 +59,26 @@ public final class GameOverScene: SKScene {
                 items.append(url)
             }
             items.append(assets.makeAppIconImage(size: CGSize(width: 256, height: 256)))
-            if let challenge = result.challenge, let link = challenge.generateLink() {
+            if let bundle = challengeBundle {
+                items.append(contentsOf: bundle.shareItems)
+            } else if let link = result.challenge?.generateLink() {
                 items.append(link)
             }
             let activity = UIActivityViewController(activityItems: items, applicationActivities: nil)
+            activity.completionWithItemsHandler = { [weak self] activityType, completed, _, _ in
+                guard let self else { return }
+                if completed {
+                    self.analytics.track(.shareCompleted(activity: activityType?.rawValue))
+                    DispatchQueue.main.async {
+                        completion(activityType)
+                    }
+                } else {
+                    self.analytics.track(.shareCancelled)
+                    DispatchQueue.main.async {
+                        cancel()
+                    }
+                }
+            }
             controller.present(activity, animated: true)
         }
 
@@ -100,6 +125,8 @@ public final class GameOverScene: SKScene {
     private var statusLabel: SKLabelNode?
     private var lastRewardedReady = false
     private var lastGemBalance = 0
+    private var gemConfirmDeadline: TimeInterval?
+    private var lastUpdateTimestamp: TimeInterval = 0
 
     public init(size: CGSize, viewModel: ViewModel, assets: AssetGenerating, result: GameResult) {
         self.viewModel = viewModel
@@ -126,12 +153,15 @@ public final class GameOverScene: SKScene {
         configureButtons()
         refreshGemHUD()
         updateRewardedState()
+        updateGemButtonTitle(confirming: false)
     }
 
     public override func update(_ currentTime: TimeInterval) {
         super.update(currentTime)
+        lastUpdateTimestamp = currentTime
         updateRewardedState()
         refreshGemHUD()
+        expireGemConfirmIfNeeded(currentTime: currentTime)
     }
 
     private func configureBranding() {
@@ -226,7 +256,11 @@ public final class GameOverScene: SKScene {
             statusLabel?.text = ready ? "Revive available" : "Loading sponsor…"
             lastRewardedReady = ready
         }
-        continueGemButton?.alpha = viewModel.canAffordGemRevive() ? 1.0 : 0.4
+        let canAfford = viewModel.canAffordGemRevive()
+        continueGemButton?.alpha = canAfford ? 1.0 : 0.4
+        if !canAfford {
+            cancelGemConfirmIfNeeded()
+        }
     }
 
     private func refreshGemHUD() {
@@ -239,12 +273,25 @@ public final class GameOverScene: SKScene {
 
     private func handleShare() {
         guard let controller = view?.window?.rootViewController else { return }
-        viewModel.share(result: result, from: controller)
-        overDelegate?.gameOverSceneDidFinishShare(self)
+        viewModel.share(result: result,
+                        from: controller,
+                        completion: { [weak self] activity in
+                            guard let self else { return }
+                            if let activity {
+                                self.statusLabel?.text = "Shared via \(activity.rawValue)"
+                            } else {
+                                self.statusLabel?.text = "Shared highlight!"
+                            }
+                            self.overDelegate?.gameOverSceneDidFinishShare(self)
+                        },
+                        cancel: { [weak self] in
+                            self?.statusLabel?.text = "Share cancelled"
+                        })
     }
 
     private func handleRewardedRevive() {
         guard let controller = view?.window?.rootViewController else { return }
+        cancelGemConfirmIfNeeded()
         continueAdButton?.setPressed(true)
         viewModel.showRewarded(from: controller) { [weak self] result in
             guard let self else { return }
@@ -261,10 +308,21 @@ public final class GameOverScene: SKScene {
     private func handleGemRevive() {
         guard viewModel.canAffordGemRevive() else {
             statusLabel?.text = "Earn more gems to revive"
+            cancelGemConfirmIfNeeded()
+            return
+        }
+        let now = lastUpdateTimestamp > 0 ? lastUpdateTimestamp : CACurrentMediaTime()
+        if gemConfirmDeadline == nil || now > (gemConfirmDeadline ?? 0) {
+            gemConfirmDeadline = now + GameConstants.premiumConfirmWindow
+            updateGemButtonTitle(confirming: true)
+            statusLabel?.text = "Tap again to confirm"
             return
         }
         if viewModel.spendGemsForRevive() {
+            gemConfirmDeadline = nil
+            updateGemButtonTitle(confirming: false)
             refreshGemHUD()
+            statusLabel?.text = "Gem revive activated"
             overDelegate?.gameOverSceneDidRequestRevive(self)
         }
     }
@@ -293,6 +351,7 @@ public final class GameOverScene: SKScene {
             handleGemRevive()
             return
         }
+        cancelGemConfirmIfNeeded()
         if target === retryButton {
             overDelegate?.gameOverSceneDidRequestRetry(self)
             return
@@ -304,9 +363,31 @@ public final class GameOverScene: SKScene {
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         [shareButton, continueAdButton, continueGemButton, retryButton, homeButton].forEach { $0?.setPressed(false) }
+        cancelGemConfirmIfNeeded()
     }
 
     private func button(at point: CGPoint) -> SKSpriteNode? {
         [shareButton, continueAdButton, continueGemButton, retryButton, homeButton].compactMap { $0 }.first(where: { $0.contains(point) })
+    }
+
+    private func cancelGemConfirmIfNeeded() {
+        guard gemConfirmDeadline != nil else { return }
+        gemConfirmDeadline = nil
+        updateGemButtonTitle(confirming: false)
+    }
+
+    private func expireGemConfirmIfNeeded(currentTime: TimeInterval) {
+        guard let deadline = gemConfirmDeadline else { return }
+        if currentTime > deadline {
+            gemConfirmDeadline = nil
+            updateGemButtonTitle(confirming: false)
+            statusLabel?.text = "Gem revive timed out"
+        }
+    }
+
+    private func updateGemButtonTitle(confirming: Bool) {
+        guard let button = continueGemButton,
+              let label = button.childNode(withName: "label") as? SKLabelNode else { return }
+        label.text = confirming ? "Tap again to confirm" : "Spend Gems (\(viewModel.gemReviveCost))"
     }
 }

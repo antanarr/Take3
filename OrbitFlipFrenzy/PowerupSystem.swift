@@ -59,6 +59,7 @@ public enum PowerUp: CustomStringConvertible, Codable {
 private struct ActivePowerUpEntry {
     let powerUp: PowerUp
     let expiresAt: TimeInterval
+    let startedAt: TimeInterval
 }
 
 public protocol PowerupManaging: AnyObject {
@@ -70,6 +71,7 @@ public protocol PowerupManaging: AnyObject {
     func deactivate(_ type: PowerUpType)
     func reset()
     var activeTypes: [PowerUpType] { get }
+    func normalizedStrength(for type: PowerUpType, currentTime: TimeInterval) -> CGFloat?
 }
 
 public final class PowerupManager: PowerupManaging {
@@ -89,7 +91,7 @@ public final class PowerupManager: PowerupManaging {
         }
 
         active.removeAll { $0.powerUp.type == powerUp.type }
-        let entry = ActivePowerUpEntry(powerUp: powerUp, expiresAt: currentTime + duration)
+        let entry = ActivePowerUpEntry(powerUp: powerUp, expiresAt: currentTime + duration, startedAt: currentTime)
         active.append(entry)
     }
 
@@ -122,6 +124,14 @@ public final class PowerupManager: PowerupManaging {
 
     public var activeTypes: [PowerUpType] {
         active.map { $0.powerUp.type }
+    }
+
+    public func normalizedStrength(for type: PowerUpType, currentTime: TimeInterval) -> CGFloat? {
+        cleanupExpired(currentTime: currentTime)
+        guard let entry = active.first(where: { $0.powerUp.type == type }) else { return nil }
+        let duration = max(entry.expiresAt - entry.startedAt, 0.0001)
+        let remaining = max(entry.expiresAt - currentTime, 0)
+        return CGFloat(remaining / duration)
     }
 
     private func cleanupExpired(currentTime: TimeInterval) {

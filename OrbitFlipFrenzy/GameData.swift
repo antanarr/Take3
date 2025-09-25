@@ -23,6 +23,30 @@ public struct DailyStreak: Codable {
     }
 }
 
+public struct OnboardingState: Codable {
+    public var tapComplete: Bool
+    public var doubleFlipComplete: Bool
+    public var orbitSwapComplete: Bool
+    public var hasSeenCurrency: Bool
+    public var hasSeenPremiumStore: Bool
+
+    public init(tapComplete: Bool = false,
+                doubleFlipComplete: Bool = false,
+                orbitSwapComplete: Bool = false,
+                hasSeenCurrency: Bool = false,
+                hasSeenPremiumStore: Bool = false) {
+        self.tapComplete = tapComplete
+        self.doubleFlipComplete = doubleFlipComplete
+        self.orbitSwapComplete = orbitSwapComplete
+        self.hasSeenCurrency = hasSeenCurrency
+        self.hasSeenPremiumStore = hasSeenPremiumStore
+    }
+
+    public var isComplete: Bool {
+        tapComplete && doubleFlipComplete && orbitSwapComplete
+    }
+}
+
 public struct PlayerEntitlements: Codable {
     public static let defaultSkinIdentifier = "default_pod"
 
@@ -70,6 +94,7 @@ public final class GameData {
         static let streak = "com.orbitflip.streak"
         static let lastStarterPackPrompt = "com.orbitflip.starterpack.prompt"
         static let entitlements = "com.orbitflip.entitlements"
+        static let onboarding = "com.orbitflip.onboarding"
     }
 
     private let defaults: UserDefaults
@@ -102,6 +127,21 @@ public final class GameData {
         set {
             if let data = try? JSONEncoder().encode(newValue) {
                 defaults.set(data, forKey: Keys.entitlements)
+            }
+        }
+    }
+
+    public var onboardingState: OnboardingState {
+        get {
+            guard let data = defaults.data(forKey: Keys.onboarding),
+                  let state = try? JSONDecoder().decode(OnboardingState.self, from: data) else {
+                return OnboardingState()
+            }
+            return state
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Keys.onboarding)
             }
         }
     }
@@ -174,6 +214,9 @@ public final class GameData {
     private func bootstrapEntitlementsIfNeeded() {
         if defaults.data(forKey: Keys.entitlements) == nil {
             entitlements = PlayerEntitlements()
+        }
+        if defaults.data(forKey: Keys.onboarding) == nil {
+            onboardingState = OnboardingState()
         }
     }
 
