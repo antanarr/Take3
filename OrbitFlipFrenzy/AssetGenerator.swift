@@ -15,6 +15,7 @@ public enum InterfaceIcon {
     case alert
     case gems
     case timer
+    case info
 }
 
 public protocol AssetGenerating: AnyObject {
@@ -520,6 +521,26 @@ public final class AssetGenerator: AssetGenerating {
             arrow.close()
             GamePalette.neonMagenta.setFill()
             arrow.fill()
+        case .info:
+            let dotDiameter = max(diameter * 0.1, 2.0)
+            let dotRect = CGRect(x: -dotDiameter / 2, y: diameter * 0.18, width: dotDiameter, height: dotDiameter)
+            let dot = UIBezierPath(ovalIn: dotRect)
+            GamePalette.cyan.setFill()
+            dot.fill()
+
+            let stem = UIBezierPath()
+            stem.move(to: CGPoint(x: 0, y: -diameter * 0.25))
+            stem.addLine(to: CGPoint(x: 0, y: diameter * 0.05))
+            GamePalette.cyan.setStroke()
+            stem.lineWidth = max(2.0, diameter * 0.08)
+            stem.stroke()
+
+            let base = UIBezierPath()
+            base.move(to: CGPoint(x: -diameter * 0.12, y: -diameter * 0.25))
+            base.addLine(to: CGPoint(x: diameter * 0.12, y: -diameter * 0.25))
+            GamePalette.cyan.setStroke()
+            base.lineWidth = max(2.0, diameter * 0.08)
+            base.stroke()
         case .home:
             let path = UIBezierPath()
             path.move(to: CGPoint(x: -diameter * 0.3, y: -diameter * 0.1))
