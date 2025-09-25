@@ -3,7 +3,6 @@
 
 This repository contains the Swift/SpriteKit implementation of **Orbit Flip Frenzy**, an iOS arcade title generated entirely from code. The goal of this README is to track follow-up tasks by discipline after reviewing the shipped code.
 
-=======
 
 ## Programmatic asset coverage
 
@@ -343,6 +342,28 @@ Every phase of the 60-second loop now reinforces “one more run” without cras
 - Extend automated test coverage around the new confirm flows, magnet interactions, and challenge deep links.
 - Continue tuning audio and color polish now that the systemic blockers are closed.
 
-### Deferred
 - None – Phase 5–7 acceptance criteria are fully implemented.
+
+
+## Phase 5–7 Re-Review (Post-Autofix)
+
+### Phase 5 – Critical Systems
+- Safe-pass detection stays tied to each obstacle's ring metadata and only awards progress after the player clears the danger arc on the contested ring.
+- Near-miss tracking uses a `hasAwardedNearMiss` flag per obstacle so haptics, analytics, and multiplier bumps cannot repeat.
+- The magnet power-up now pulls collectibles, deflects hazards inside its safe zone, and dims its HUD aura as strength decays.
+- Shield collisions recycle the obstacle, clear the confirm window, and add post-hit invulnerability before the next lethal frame.
+- Rewarded ad callbacks hop onto the main queue with idempotent completion guards, and share links carry seeded challenges plus universal fallbacks.
+
+### Phase 6 – Performance Profiling
+- Replay capture downscales textures, caps the ring buffer by capability, and skips work entirely on low-power devices.
+- Obstacle advancement runs through the frame-step system only, eliminating the prior action/update duplication.
+- Near-miss emitters pull from a pooled cache with shared textures and short lifetimes to avoid allocator churn.
+
+### Phase 7 – “Mom Test”
+- The start screen spotlights the "Tap to Launch" CTA while streak badges, gem totals, and restore CTAs stay hidden until onboarding unlocks them.
+- Onboarding overlays teach tap, double flip, and orbit swap gestures and retire automatically after the first successful action.
+- HUD gating keeps premium currency and shield spend buttons hidden until the player finishes onboarding or can afford them.
+- Gem revives require a two-tap confirmation inside a grace window so premium spends are reversible if the player hesitates.
+- Share completion waits on the activity controller callback and records cancel vs. success distinctly for honest analytics.
+
 
