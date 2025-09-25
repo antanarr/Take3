@@ -60,8 +60,16 @@ public final class AdManager: AdManaging {
                                completion: @escaping (Result<Void, AdError>) -> Void) {
         queue.async { [weak self] in
             guard let self else { return }
+            var completionCalled = false
+            let finish: (Result<Void, AdError>) -> Void = { result in
+                if completionCalled { return }
+                completionCalled = true
+                DispatchQueue.main.async {
+                    completion(result)
+                }
+            }
             guard case let .ready(presenter) = self.state else {
-                completion(.failure(.notReady))
+                finish(.failure(.notReady))
                 self.scheduleReload(delay: 0.5)
                 return
             }
@@ -70,16 +78,16 @@ public final class AdManager: AdManaging {
                 self.queue.async {
                     switch result {
                     case .success:
-                        completion(.success(()))
+                        finish(.success(()))
                         self.state = .idle
                         self.scheduleReload(delay: 1.0)
                     case let .failure(error):
                         if let adError = error as? AdError {
-                            completion(.failure(adError))
+                            finish(.failure(adError))
                         } else if (error as NSError).code == NSUserCancelledError {
-                            completion(.failure(.cancelled))
+                            finish(.failure(.cancelled))
                         } else {
-                            completion(.failure(.failed(error.localizedDescription)))
+                            finish(.failure(.failed(error.localizedDescription)))
                         }
                         self.state = .idle
                         self.scheduleReload(delay: 2.0)

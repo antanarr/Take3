@@ -14,6 +14,7 @@ final class GameViewController: UIViewController {
     private let container = DependencyContainer()
     private var currentGameScene: GameScene?
     private var notificationObservers: [NSObjectProtocol] = []
+    private var pendingChallenge: Challenge?
 
     override func loadView() {
         view = skView
@@ -40,10 +41,12 @@ final class GameViewController: UIViewController {
     }
 
     private func presentGame() {
-        let scene = container.makeGameScene(size: view.bounds.size)
+        let challenge = pendingChallenge
+        let scene = container.makeGameScene(size: view.bounds.size, challenge: challenge)
         scene.gameDelegate = self
         currentGameScene = scene
         skView.presentScene(scene, transition: .doorsOpenVertical(withDuration: 0.6))
+        pendingChallenge = nil
     }
 
     private func presentGameOver(with result: GameResult) {
@@ -53,6 +56,13 @@ final class GameViewController: UIViewController {
         scene.overDelegate = self
         skView.presentScene(scene, transition: .crossFade(withDuration: 0.5))
         currentGameScene = gameScene
+    }
+
+    func queueChallenge(_ challenge: Challenge) {
+        pendingChallenge = challenge
+        if let gameScene = currentGameScene {
+            gameScene.applyChallenge(challenge)
+        }
     }
 
     private func registerForLifecycleNotifications() {
@@ -152,7 +162,7 @@ private final class DependencyContainer {
         return scene
     }
 
-    func makeGameScene(size: CGSize) -> GameScene {
+    func makeGameScene(size: CGSize, challenge: Challenge?) -> GameScene {
         let powerups = PowerupManager()
         let viewModel = GameScene.ViewModel(analytics: analytics,
                                             data: data,
@@ -165,6 +175,7 @@ private final class DependencyContainer {
                               haptics: haptics,
                               powerups: powerups,
                               adManager: adManager)
+        scene.applyChallenge(challenge)
         return scene
     }
 
@@ -196,9 +207,15 @@ private final class DependencyContainer {
     }
 }
 
+final class GameControllerHolder: ObservableObject {
+    let controller = GameViewController()
+}
+
 struct GameView: UIViewControllerRepresentable {
+    let controller: GameViewController
+
     func makeUIViewController(context: Context) -> GameViewController {
-        GameViewController()
+        controller
     }
 
     func updateUIViewController(_ uiViewController: GameViewController, context: Context) {}
@@ -206,10 +223,17 @@ struct GameView: UIViewControllerRepresentable {
 
 @main
 struct OrbitFlipFrenzyApp: App {
+    @StateObject private var controllerHolder = GameControllerHolder()
+
     var body: some Scene {
         WindowGroup {
-            GameView()
+            GameView(controller: controllerHolder.controller)
                 .edgesIgnoringSafeArea(.all)
+                .onOpenURL { url in
+                    if let challenge = Challenge(url: url) {
+                        controllerHolder.controller.queueChallenge(challenge)
+                    }
+                }
         }
     }
 }

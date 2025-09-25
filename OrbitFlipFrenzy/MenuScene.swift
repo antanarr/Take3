@@ -62,6 +62,37 @@ public final class MenuScene: SKScene {
         func gemBalanceText() -> String { "Gems: \(data.gems)" }
         func multiplierText() -> String { data.multiplierTimeRemaining() != nil ? "Multiplier active" : "Multiplier inactive" }
 
+        func shouldShowCurrency() -> Bool {
+            let state = data.onboardingState
+            return state.hasSeenCurrency || state.isComplete || data.gems > 0
+        }
+
+        func shouldShowShopToggle() -> Bool {
+            let state = data.onboardingState
+            return state.hasSeenPremiumStore || state.isComplete || data.gems >= GameConstants.shieldPowerupGemCost
+        }
+
+        func shouldShowStreakBadge() -> Bool {
+            let state = data.onboardingState
+            return state.isComplete || data.dailyStreak.streakDays > 1
+        }
+
+        func markCurrencySeenIfNeeded() {
+            var state = data.onboardingState
+            if !state.hasSeenCurrency {
+                state.hasSeenCurrency = true
+                data.onboardingState = state
+            }
+        }
+
+        func markPremiumStoreSeenIfNeeded() {
+            var state = data.onboardingState
+            if !state.hasSeenPremiumStore {
+                state.hasSeenPremiumStore = true
+                data.onboardingState = state
+            }
+        }
+
         func observeProducts(_ update: @escaping () -> Void) {
             productObserver = purchases.observeProducts { [weak self] products in
                 self?.cachedProducts = products
@@ -116,6 +147,9 @@ public final class MenuScene: SKScene {
     private var gemLabel: SKLabelNode?
     private var highScoreLabel: SKLabelNode?
     private var streakDetailLabel: SKLabelNode?
+    private var shopToggleButton: SKSpriteNode?
+    private var shopVisible = false
+    private var currentStreak: DailyStreak?
 
     public init(size: CGSize, viewModel: ViewModel, assets: AssetGenerating) {
         self.viewModel = viewModel
@@ -139,10 +173,12 @@ public final class MenuScene: SKScene {
         layoutProducts()
 
         let streak = viewModel.registerDailyStreak()
-        updateStreakBadge(with: streak)
+        updateStreakBadge(with: streak, animated: false)
         updateMetaLabels()
+        updateShopVisibility(animated: false)
         viewModel.observeProducts { [weak self] in
             self?.layoutProducts()
+            self?.updateShopVisibility(animated: false)
         }
     }
 
@@ -160,6 +196,8 @@ public final class MenuScene: SKScene {
         addChild(streak)
         streakBadge = streak
         streakDetailLabel = streak.childNode(withName: "badgeSubtitle") as? SKLabelNode
+        streakBadge?.isHidden = true
+        streakBadge?.alpha = 0.0
 
         let highScore = SKLabelNode(fontNamed: "Orbitron-Bold")
         highScore.fontSize = 20
@@ -174,6 +212,8 @@ public final class MenuScene: SKScene {
         gem.position = CGPoint(x: 0, y: size.height * 0.32)
         addChild(gem)
         gemLabel = gem
+        gemLabel?.isHidden = true
+        gemLabel?.alpha = 0.0
     }
 
     private func configureButtons() {
@@ -183,13 +223,23 @@ public final class MenuScene: SKScene {
         addChild(button)
         startButton = button
 
+        let shopToggle = assets.makeButtonNode(text: "Shop", size: CGSize(width: 180, height: 60), icon: .gems)
+        shopToggle.position = CGPoint(x: 0, y: -size.height * 0.22)
+        shopToggle.name = "shop_toggle"
+        addChild(shopToggle)
+        shopToggleButton = shopToggle
+
         let restore = SKLabelNode(fontNamed: "SFProRounded-Regular")
         restore.text = "Restore Purchases"
         restore.fontSize = 16
         restore.fontColor = UIColor.white.withAlphaComponent(0.75)
         restore.position = CGPoint(x: 0, y: -size.height * 0.42)
+        restore.alpha = 0.0
+        restore.isHidden = true
         addChild(restore)
         restoreButton = restore
+
+        updateShopToggleTitle()
     }
 
     private func layoutProducts() {
@@ -208,7 +258,12 @@ public final class MenuScene: SKScene {
             let node = assets.makeMonetizationButton(title: product.title, subtitle: subtitle, icon: "💠")
             node.position = CGPoint(x: 0, y: currentY)
             node.name = product.title
-            node.alpha = product.highlight ? 1.0 : 0.85
+            let targetAlpha: CGFloat = product.highlight ? 1.0 : 0.85
+            node.alpha = shopVisible ? targetAlpha : 0.0
+            let metadata = node.userData ?? NSMutableDictionary()
+            metadata["targetAlpha"] = targetAlpha
+            node.userData = metadata
+            node.isHidden = !shopVisible
             if let badge = product.badge {
                 let badgeLabel = SKLabelNode(fontNamed: "Orbitron-Bold")
                 badgeLabel.text = badge
@@ -224,31 +279,132 @@ public final class MenuScene: SKScene {
         }
     }
 
-    private func updateStreakBadge(with streak: DailyStreak) {
+    private func updateStreakBadge(with streak: DailyStreak, animated: Bool = true) {
+        currentStreak = streak
         let title = "Daily Streak: \(streak.streakDays)d"
         let subtitle = String(format: "+%.0f gems • x%.1f boost", streak.reward, streak.multiplierBonus)
         (streakBadge?.childNode(withName: "badgeTitle") as? SKLabelNode)?.text = title
         streakDetailLabel?.text = subtitle
-        streakBadge?.alpha = streak.isMultiplierActive ? 1.0 : 0.7
+        let visible = shopVisible && viewModel.shouldShowStreakBadge()
+        let targetAlpha: CGFloat = streak.isMultiplierActive ? 1.0 : 0.7
+        applyVisibility(to: streakBadge, visible: visible, alpha: targetAlpha, animated: animated)
     }
 
     private func updateMetaLabels() {
         highScoreLabel?.text = viewModel.highScoreText()
         gemLabel?.text = viewModel.gemBalanceText()
+        updateGemLabelVisibility(animated: false)
+    }
+
+    private func updateGemLabelVisibility(animated: Bool) {
+        guard let label = gemLabel else { return }
+        let shouldShow = viewModel.shouldShowCurrency()
+        if shouldShow { viewModel.markCurrencySeenIfNeeded() }
+        applyVisibility(to: label, visible: shouldShow, alpha: 1.0, animated: animated)
+    }
+
+    private func updateShopVisibility(animated: Bool) {
+        let canShowShop = viewModel.shouldShowShopToggle()
+        if !canShowShop { shopVisible = false }
+        shopToggleButton?.isHidden = !canShowShop
+        updateShopToggleTitle()
+
+        let duration: TimeInterval = animated ? 0.25 : 0.0
+        for case let node as SKSpriteNode in productNodes {
+            let targetAlpha = (node.userData?["targetAlpha"] as? CGFloat) ?? 1.0
+            let finalAlpha = shopVisible ? targetAlpha : 0.0
+            if animated {
+                node.removeAllActions()
+                if shopVisible {
+                    node.isHidden = false
+                    node.run(SKAction.fadeAlpha(to: finalAlpha, duration: duration))
+                } else {
+                    node.run(SKAction.sequence([
+                        SKAction.fadeAlpha(to: 0.0, duration: duration),
+                        SKAction.run { node.isHidden = true }
+                    ]))
+                }
+            } else {
+                node.alpha = finalAlpha
+                node.isHidden = !shopVisible
+            }
+        }
+
+        if let restore = restoreButton {
+            let visible = shopVisible && canShowShop
+            if animated {
+                restore.removeAllActions()
+                if visible {
+                    restore.isHidden = false
+                    restore.run(SKAction.fadeAlpha(to: 0.8, duration: duration))
+                } else {
+                    restore.run(SKAction.sequence([
+                        SKAction.fadeOut(withDuration: duration),
+                        SKAction.run { restore.isHidden = true }
+                    ]))
+                }
+            } else {
+                restore.alpha = visible ? 0.8 : 0.0
+                restore.isHidden = !visible
+            }
+        }
+
+        if let streak = currentStreak {
+            updateStreakBadge(with: streak, animated: animated)
+        } else {
+            let shouldShowStreak = viewModel.shouldShowStreakBadge()
+            let streakVisible = shopVisible && shouldShowStreak
+            applyVisibility(to: streakBadge, visible: streakVisible, alpha: 1.0, animated: animated)
+        }
+        updateGemLabelVisibility(animated: animated)
+    }
+
+    private func updateShopToggleTitle() {
+        guard let button = shopToggleButton,
+              let label = button.childNode(withName: "label") as? SKLabelNode else { return }
+        label.text = shopVisible ? "Close Shop" : "Shop"
+        button.alpha = button.isHidden ? 0.0 : 1.0
+    }
+
+    private func toggleShopVisibility() {
+        guard viewModel.shouldShowShopToggle() else { return }
+        if !shopVisible {
+            viewModel.markPremiumStoreSeenIfNeeded()
+        }
+        shopVisible.toggle()
+        updateShopVisibility(animated: true)
+    }
+
+    private func applyVisibility(to node: SKNode?, visible: Bool, alpha: CGFloat, animated: Bool) {
+        guard let node else { return }
+        if animated {
+            node.removeAllActions()
+            if visible {
+                node.isHidden = false
+                node.run(SKAction.fadeAlpha(to: alpha, duration: 0.25))
+            } else {
+                node.run(SKAction.sequence([
+                    SKAction.fadeAlpha(to: 0.0, duration: 0.2),
+                    SKAction.run { node.isHidden = true }
+                ]))
+            }
+        } else {
+            node.alpha = visible ? alpha : 0.0
+            node.isHidden = !visible
+        }
     }
 
     // MARK: - Touch Handling
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let location = touches.first?.location(in: self) else { return }
-        if let button = startButton, button.contains(location) {
-            button.setPressed(true)
-        }
+        interactiveButton(at: location)?.setPressed(true)
     }
 
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let location = touches.first?.location(in: self) else { return }
-        startButton?.setPressed(false)
+        [startButton, shopToggleButton].forEach { $0?.setPressed(false) }
+        productNodes.compactMap { $0 as? SKSpriteNode }.forEach { $0.setPressed(false) }
 
         if let button = startButton, button.contains(location) {
             viewModel.startTapped()
@@ -256,17 +412,34 @@ public final class MenuScene: SKScene {
             return
         }
 
-        if let restore = restoreButton, restore.contains(location) {
+        if let toggle = shopToggleButton, !toggle.isHidden, toggle.contains(location) {
+            toggleShopVisibility()
+            toggle.setPressed(false)
+            return
+        }
+
+        if let restore = restoreButton, !restore.isHidden, restore.contains(location) {
             menuDelegate?.menuSceneDidRequestRestore(self)
             return
         }
 
-        if let product = productNodes.first(where: { $0.contains(location) }) {
+        if shopVisible, let product = productNodes.first(where: { !$0.isHidden && $0.contains(location) }) {
             menuDelegate?.menuScene(self, didSelectProduct: product.name ?? "")
+            return
         }
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        startButton?.setPressed(false)
+        [startButton, shopToggleButton].forEach { $0?.setPressed(false) }
+        productNodes.compactMap { $0 as? SKSpriteNode }.forEach { $0.setPressed(false) }
+    }
+
+    private func interactiveButton(at location: CGPoint) -> SKSpriteNode? {
+        if let start = startButton, start.contains(location) { return start }
+        if let toggle = shopToggleButton, !toggle.isHidden, toggle.contains(location) { return toggle }
+        for case let node as SKSpriteNode in productNodes where shopVisible && !node.isHidden && node.contains(location) {
+            return node
+        }
+        return nil
     }
 }
