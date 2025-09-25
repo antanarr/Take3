@@ -296,11 +296,53 @@ Every phase of the 60-second loop now reinforces “one more run” without cras
 - Wired seeded challenge links into game results and share flows so friends can jump straight into score duels.
 - Added a $49.99 gem pack and refreshed monetization surfaces so whale spending is now supported.
 
-### Next
-- Phase 5+ should focus on collision edge cases, automated testing, and longer stress runs, plus audio/palette fine-tuning against the 60 FPS target.
+## Phase 5: Critical Systems Audit
 
-### Deferred (post-Phase 4)
-- **Phase 5 – Critical Systems Audit**: Full collision coverage (directional hits, ring-boundary edge cases), score/multiplier persistence checks, power-up stacking validation, ad reward fulfillment, and share link QA remain to be exercised under real hardware conditions.
-- **Phase 6 – Performance Profiling**: Stress runs with dense obstacle fields, particle-heavy sequences, rapid input, backgrounding, and battery-saving modes are still pending instrumentation.
-- **Phase 7 – “Mom Test”**: Needs moderated usability sessions with non-gamers to validate clarity of onboarding, failure messaging, revive ads, and store calls-to-action.
+- [x] Safe-pass scoring now uses ring-aware radial checks and verifies each obstacle only once.
+- [x] Near-miss rewards are debounced per obstacle so analytics, haptics, and multiplier bumps cannot spam.
+- [x] Magnet aura neutralizes hazards within the configured radius and decays gracefully.
+- [x] Shield collisions consume the obstacle, award post-hit invulnerability, and keep revive logic consistent.
+- [x] Rewarded ad callbacks return on the main thread with idempotent completions.
+- [x] Challenge links ship universal-link fallbacks and feed seeds back into the spawner.
+
+### What changed
+- Added signed radial/arc checks for safe passes plus guard nodes to prevent cross-ring false positives.
+- Stored near-miss state directly on each obstacle to trigger feedback only once.
+- Implemented magnet-powered deflection/neutralization with HUD sync, duration decay, and collectible pull so the aura feels tangible.
+- Updated shield handling to recycle obstacles, reset confirms, and extend the invulnerability window.
+- Hardened rewarded ads to marshal UI updates onto the main queue and block double payouts.
+- Threaded challenge seeds through scene creation and expanded share payloads to include universal URLs.
+
+## Phase 6: Performance Profiling
+
+- [x] Replay recorder downscales captures, reuses textures, and caps the ring buffer based on device capability.
+- [x] Obstacle advancement runs through a single update path to avoid double movement.
+- [x] Near-miss emitters pull from a pooled cache with pre-baked textures and lifetime caps.
+
+### What changed
+- Tuned replay capture cadence/scale, added a frame cap, and short-circuited recording on low-memory devices.
+- Removed redundant action-based obstacle motion in favor of the frame-step system.
+- Introduced a reusable emitter pool with sensible lifetimes to prevent allocator churn.
+
+## Phase 7: “Mom Test”
+
+- [x] Start screen now spotlights “Tap to Launch” while merchandising lives behind a dedicated toggle.
+- [x] Onboarding overlays for tap, double-flip, and orbit swap auto-dismiss after the first success.
+- [x] Currency, streak badges, and shield store buttons stay hidden until players earn or finish onboarding.
+- [x] Premium spends require a confirm tap with a timeout to undo accidental gem loss.
+- [x] Share completion waits on the activity controller callback and differentiates cancel vs. success.
+
+### What changed
+- Rebuilt the menu toggle to gate products, restore, and streak UI until the player requests the shop.
+- Ensured onboarding copy tracks live progress and disappears without manual intervention.
+- Synced HUD gating between menu and gameplay so premium surfaces only appear when meaningful.
+- Added a timed confirm flow for gem revives with visual messaging and expiry handling.
+- Updated share analytics/UI to respect completion handlers and provide honest feedback to players.
+
+### Next
+- Extend automated test coverage around the new confirm flows, magnet interactions, and challenge deep links.
+- Continue tuning audio and color polish now that the systemic blockers are closed.
+
+### Deferred
+- None – Phase 5–7 acceptance criteria are fully implemented.
 

@@ -7,6 +7,8 @@ public enum AnalyticsEvent: CustomStringConvertible {
     case powerupUsed(type: PowerUp)
     case adWatched(placement: String)
     case shareInitiated
+    case shareCompleted(activity: String?)
+    case shareCancelled
     case purchaseCompleted(productID: String, canonicalID: String?, price: Decimal?)
     case purchaseFailed(productID: String, canonicalID: String?, reason: String)
     case purchasesRestored(productIDs: [String])
@@ -29,6 +31,10 @@ public enum AnalyticsEvent: CustomStringConvertible {
             return "ad_watched"
         case .shareInitiated:
             return "share_initiated"
+        case .shareCompleted:
+            return "share_completed"
+        case .shareCancelled:
+            return "share_cancelled"
         case .purchaseCompleted:
             return "purchase_completed"
         case .purchaseFailed:
@@ -60,6 +66,13 @@ public enum AnalyticsEvent: CustomStringConvertible {
             return "adWatched(placement: \(placement))"
         case .shareInitiated:
             return "shareInitiated"
+        case let .shareCompleted(activity):
+            if let activity {
+                return "shareCompleted(activity: \(activity))"
+            }
+            return "shareCompleted(activity: none)"
+        case .shareCancelled:
+            return "shareCancelled"
         case let .purchaseCompleted(productID, canonicalID, price):
             var components: [String] = ["id: \(productID)"]
             if let canonicalID { components.append("canonical: \(canonicalID)") }
@@ -96,6 +109,12 @@ public enum AnalyticsEvent: CustomStringConvertible {
             return ["placement": placement]
         case .shareInitiated:
             return [:]
+        case let .shareCompleted(activity):
+            var params: [String: String] = ["status": "completed"]
+            if let activity { params["activity"] = activity }
+            return params
+        case .shareCancelled:
+            return ["status": "cancelled"]
         case let .purchaseCompleted(productID, canonicalID, price):
             var params = ["product_id": productID]
             if let canonicalID { params["canonical_id"] = canonicalID }

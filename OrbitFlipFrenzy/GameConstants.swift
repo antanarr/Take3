@@ -15,13 +15,16 @@ public struct GameConstants {
     public static let obstaclePoolWarmupCount: Int = 12
     public static let obstaclePoolMaxStored: Int = 24
     public static let obstacleLifetime: TimeInterval = 6.0
-    public static let nearMissDistance: CGFloat = 12.0
+    public static let nearMissDistance: CGFloat = 18.0
     public static let nearMissMultiplierGain: CGFloat = 0.2
     public static let multiplierDecayFactor: CGFloat = 0.5
     public static let scorePerAction: CGFloat = 10.0
     public static let powerupShieldDuration: TimeInterval = 3.0
     public static let powerupSlowFactor: CGFloat = 0.5
     public static let magnetStrength: CGFloat = 50.0
+    public static let magnetDeflectStrength: CGFloat = 2.4
+    public static let magnetAttractRadius: CGFloat = 220.0
+    public static let magnetCollectDistance: CGFloat = 28.0
     public static let tutorialGhostObstacles: Int = 3
     public static let ghostAssistObstacles: Int = 2
     public static let ghostAssistAdGemReward: Int = 40
@@ -29,7 +32,7 @@ public struct GameConstants {
     public static let maxRings: Int = 3
     public static let ringRadii: [CGFloat] = [90.0, 140.0, 190.0]
     public static let ringStrokeWidth: CGFloat = 6.0
-    public static let frameCaptureInterval: TimeInterval = 0.1
+    public static let frameCaptureInterval: TimeInterval = 0.15
     public static let replayDuration: TimeInterval = 3.0
     public static let particleBirthRate: CGFloat = 100.0
     public static let particleLifetime: CGFloat = 0.5
@@ -40,13 +43,27 @@ public struct GameConstants {
     public static let inversionDuration: TimeInterval = 5.0
     public static let meteorShowerDuration: TimeInterval = 6.0
     public static let gravityReversalDuration: TimeInterval = 8.0
-    public static let magnetSafeZoneRadius: CGFloat = 24.0
+    public static let magnetSafeZoneRadius: CGFloat = 72.0
     public static let adReadinessPollInterval: TimeInterval = 0.5
     public static let reviveGemCost: Int = 150
     public static let shieldPowerupGemCost: Int = 120
     public static let starterPackGemGrant: Int = 200
     public static let starterPackSkinIdentifier: String = "nova_pod"
     public static let shieldPowerupDuration: TimeInterval = powerupShieldDuration
+    public static let shieldPostHitInvulnerability: TimeInterval = 0.45
+    public static let premiumConfirmWindow: TimeInterval = 3.0
+    public static let nearMissEmitterPoolSize: Int = 10
+    public static let nearMissEmitterLifetime: TimeInterval = 0.6
+    public static let nearMissArcThreshold: CGFloat = .pi / 18
+    public static let nearMissCollisionPadding: CGFloat = 10.0
+    public static let safePassThreatArc: CGFloat = .pi / 10
+    public static let safePassReleaseArc: CGFloat = .pi / 5
+    public static let obstacleBaseAngularSpeed: CGFloat = .pi / 1.6
+    public static let obstacleAngularSpeedGrowth: CGFloat = 0.07
+    public static let magnetNeutralizeDuration: TimeInterval = 0.35
+    public static let replayCaptureScale: CGFloat = 0.5
+    public static let replayMaxFrames: Int = 24
+    public static let replayLowPowerMemoryThreshold: UInt64 = 2_147_483_648 // 2 GB
 }
 
 public enum GamePalette {
